@@ -1,0 +1,288 @@
+package com.monosun.monitor.agent;
+
+import javax.management.*;
+import java.lang.management.*;
+import java.time.Instant;
+import java.util.*;
+
+/**
+ * 대상 JVM에서 스레드 상세 정보를 수집합니다.
+ * ThreadMXBean을 통해 전체 스택 트레이스, 잠금 정보, CPU/대기 시간 등을 수집합니다.
+ */
+public class AgentThreadCollector {
+
+    private final ThreadMXBean threadMX = ManagementFactory.getThreadMXBean();
+
+    public AgentThreadCollector() {
+        if (threadMX.isThreadContentionMonitoringSupported()) {
+            threadMX.setThreadContentionMonitoringEnabled(true);
+        }
+        if (threadMX.isThreadCpuTimeSupported()) {
+            threadMX.setThreadCpuTimeEnabled(true);
+        }
+    }
+
+    /** 스레드 목록 (maxFrames 프레임 스택 포함, BLOCKED→WAITING→RUNNABLE 정렬) */
+    public List<Map<String, Object>> getThreadList(int maxFrames) {
+        long[] ids = threadMX.getAllThreadIds();
+        if (ids.length > 500) ids = Arrays.copyOf(ids, 500);
+        ThreadInfo[] infos = threadMX.getThreadInfo(ids, maxFrames);
+        boolean cpuOk    = threadMX.isThreadCpuTimeSupported() && threadMX.isThreadCpuTimeEnabled();
+        boolean timingOk = threadMX.isThreadContentionMonitoringSupported()
+                        && threadMX.isThreadContentionMonitoringEnabled();
+
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (ThreadInfo ti : infos) {
+            if (ti == null) continue;
+            result.add(toMap(ti, cpuOk, timingOk, maxFrames));
+        }
+        result.sort((a, b) -> {
+            int oa = stateOrder(a.get("state").toString());
+            int ob = stateOrder(b.get("state").toString());
+            if (oa != ob) return oa - ob;
+            long ca = a.containsKey("cpuMs") ? (Long) a.get("cpuMs") : 0L;
+            long cb = b.containsKey("cpuMs") ? (Long) b.get("cpuMs") : 0L;
+            return Long.compare(cb, ca);
+        });
+        return result;
+    }
+
+    /** 특정 스레드 전체 상세 (전체 스택 + 잠금 체인) */
+    public Map<String, Object> getThreadDetail(long id) {
+        ThreadInfo[] infos = threadMX.getThreadInfo(new long[]{id}, Integer.MAX_VALUE);
+        if (infos.length == 0 || infos[0] == null) return null;
+        boolean cpuOk    = threadMX.isThreadCpuTimeSupported() && threadMX.isThreadCpuTimeEnabled();
+        boolean timingOk = threadMX.isThreadContentionMonitoringSupported()
+                        && threadMX.isThreadContentionMonitoringEnabled();
+        return toMap(infos[0], cpuOk, timingOk, Integer.MAX_VALUE);
+    }
+
+    /** 전체 스레드 덤프 (jstack 형식) */
+    public String getThreadDump() {
+        ThreadInfo[] infos = threadMX.dumpAllThreads(true, true);
+        long[] deadlocked = findDeadlocked();
+        Set<Long> deadSet = new HashSet<>();
+        for (long id : deadlocked) deadSet.add(id);
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("Full Thread Dump — ").append(Instant.now()).append('\n');
+        sb.append("pid=").append(ProcessHandle.current().pid())
+          .append(" threads=").append(threadMX.getThreadCount())
+          .append(" daemon=").append(threadMX.getDaemonThreadCount())
+          .append(" peak=").append(threadMX.getPeakThreadCount()).append("\n\n");
+
+        if (!deadSet.isEmpty()) {
+            sb.append("!!! DEADLOCK DETECTED — Thread IDs: ");
+            deadSet.forEach(id -> sb.append(id).append(' '));
+            sb.append("!!!\n\n");
+        }
+
+        for (ThreadInfo ti : infos) {
+            sb.append('"').append(ti.getThreadName()).append('"');
+            if (ti.isDaemon()) sb.append(" daemon");
+            sb.append(" #").append(ti.getThreadId());
+            sb.append(" prio=").append(ti.getPriority());
+            if (deadSet.contains(ti.getThreadId())) sb.append(" *** DEADLOCKED ***");
+            sb.append('\n');
+            sb.append("   java.lang.Thread.State: ").append(ti.getThreadState()).append('\n');
+            if (ti.getLockName() != null) {
+                sb.append("   - waiting on <").append(ti.getLockName()).append('>');
+                if (ti.getLockOwnerName() != null)
+                    sb.append(" owned by \"").append(ti.getLockOwnerName())
+                      .append("\" id=").append(ti.getLockOwnerId());
+                sb.append('\n');
+            }
+
+            StackTraceElement[] stack = ti.getStackTrace();
+            MonitorInfo[]       mons  = ti.getLockedMonitors();
+            Map<Integer, List<MonitorInfo>> monByDepth = new HashMap<>();
+            for (MonitorInfo m : mons)
+                monByDepth.computeIfAbsent(m.getLockedStackDepth(), k -> new ArrayList<>()).add(m);
+
+            for (int i = 0; i < stack.length; i++) {
+                sb.append("\tat ").append(stack[i]).append('\n');
+                List<MonitorInfo> atFrame = monByDepth.get(i);
+                if (atFrame != null)
+                    for (MonitorInfo m : atFrame)
+                        sb.append("\t- locked <").append(m.getClassName()).append('@')
+                          .append(Integer.toHexString(m.getIdentityHashCode())).append(">\n");
+            }
+
+            LockInfo[] syncs = ti.getLockedSynchronizers();
+            if (syncs.length > 0) {
+                sb.append("   Locked synchronizers:\n");
+                for (LockInfo li : syncs)
+                    sb.append("   - ").append(li.getClassName()).append('@')
+                      .append(Integer.toHexString(li.getIdentityHashCode())).append('\n');
+            }
+            sb.append('\n');
+        }
+        return sb.toString();
+    }
+
+    /** 데드락 스레드 ID 배열 */
+    public long[] findDeadlocked() {
+        long[] d = threadMX.findDeadlockedThreads();
+        return d != null ? d : new long[0];
+    }
+
+    /** 데드락 체인 정보 (JSON용) */
+    public List<Map<String, Object>> getDeadlockInfo() {
+        long[] ids = findDeadlocked();
+        if (ids.length == 0) return List.of();
+        ThreadInfo[] infos = threadMX.getThreadInfo(ids, 10);
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (ThreadInfo ti : infos) {
+            if (ti == null) continue;
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("id",          ti.getThreadId());
+            m.put("name",        ti.getThreadName());
+            m.put("state",       ti.getThreadState().name());
+            if (ti.getLockName()      != null) m.put("lockName",    ti.getLockName());
+            if (ti.getLockOwnerName() != null) m.put("lockOwner",   ti.getLockOwnerName());
+            m.put("lockOwnerId", ti.getLockOwnerId());
+            List<String> frames = new ArrayList<>();
+            for (StackTraceElement e : ti.getStackTrace()) frames.add(e.toString());
+            m.put("stackTrace", frames);
+            result.add(m);
+        }
+        return result;
+    }
+
+    // ── 내부 변환 ────────────────────────────────────────────────────────────
+
+    private Map<String, Object> toMap(ThreadInfo ti, boolean cpuOk, boolean timingOk, int maxFrames) {
+        Map<String, Object> t = new LinkedHashMap<>();
+        t.put("id",        ti.getThreadId());
+        t.put("name",      ti.getThreadName());
+        t.put("state",     ti.getThreadState().name());
+        t.put("daemon",    ti.isDaemon());
+        t.put("priority",  ti.getPriority());
+        t.put("inNative",  ti.isInNative());
+        t.put("suspended", ti.isSuspended());
+
+        if (cpuOk) {
+            long cpuNs  = threadMX.getThreadCpuTime(ti.getThreadId());
+            long userNs = threadMX.getThreadUserTime(ti.getThreadId());
+            if (cpuNs  >= 0) t.put("cpuMs",  cpuNs  / 1_000_000L);
+            if (userNs >= 0) t.put("userMs", userNs / 1_000_000L);
+        }
+        if (timingOk) {
+            t.put("blockedCount",  ti.getBlockedCount());
+            t.put("blockedTimeMs", ti.getBlockedTime());
+            t.put("waitedCount",   ti.getWaitedCount());
+            t.put("waitedTimeMs",  ti.getWaitedTime());
+        }
+
+        if (ti.getLockName()      != null) t.put("lockName",    ti.getLockName());
+        if (ti.getLockOwnerName() != null) t.put("lockOwner",   ti.getLockOwnerName());
+        if (ti.getLockOwnerId()   >= 0)    t.put("lockOwnerId", ti.getLockOwnerId());
+
+        MonitorInfo[] monitors = ti.getLockedMonitors();
+        if (monitors.length > 0) {
+            List<String> monList = new ArrayList<>();
+            for (MonitorInfo m : monitors)
+                monList.add(m.getClassName() + '@' + Integer.toHexString(m.getIdentityHashCode())
+                    + " (depth=" + m.getLockedStackDepth() + ')');
+            t.put("lockedMonitors", monList);
+        }
+
+        LockInfo[] syncs = ti.getLockedSynchronizers();
+        if (syncs.length > 0) {
+            List<String> syncList = new ArrayList<>();
+            for (LockInfo li : syncs)
+                syncList.add(li.getClassName() + '@' + Integer.toHexString(li.getIdentityHashCode()));
+            t.put("lockedSynchronizers", syncList);
+        }
+
+        StackTraceElement[] stack = ti.getStackTrace();
+        List<String> frames = new ArrayList<>();
+        int limit = maxFrames == Integer.MAX_VALUE ? stack.length : Math.min(stack.length, maxFrames);
+        for (int i = 0; i < limit; i++) frames.add(stack[i].toString());
+        t.put("stackTrace",  frames);
+        t.put("stackDepth",  stack.length);
+
+        return t;
+    }
+
+    // ── HTTP 요청 처리기 (Tomcat) ────────────────────────────────────────────
+
+    public List<Map<String, Object>> getRequestProcessors() {
+        List<Map<String, Object>> result = new ArrayList<>();
+        try {
+            MBeanServer mbs = ManagementFactory.getPlatformMBeanServer();
+            ObjectName pattern = new ObjectName("Catalina:type=RequestProcessor,*");
+            Set<ObjectName> names = mbs.queryNames(pattern, null);
+            for (ObjectName on : names) {
+                try {
+                    Map<String, Object> r = new LinkedHashMap<>();
+                    r.put("worker",          safeAttr(mbs, on, "currentThreadName", ""));
+                    r.put("stage",           safeAttr(mbs, on, "stage", -1));
+                    r.put("currentUri",      safeAttr(mbs, on, "currentUri", ""));
+                    r.put("remoteAddr",      safeAttr(mbs, on, "remoteAddr", ""));
+                    Object pt = safeAttr(mbs, on, "processingTime", 0L);
+                    r.put("processingTimeMs", pt instanceof Number ? ((Number)pt).longValue() : 0L);
+                    r.put("requestCount",    safeAttr(mbs, on, "requestCount", 0L));
+                    r.put("errorCount",      safeAttr(mbs, on, "errorCount", 0L));
+                    r.put("bytesSent",       safeAttr(mbs, on, "bytesSent", 0L));
+                    result.add(r);
+                } catch (Exception ignored) {}
+            }
+            result.sort((a, b) -> {
+                long ta = a.get("processingTimeMs") instanceof Number ? ((Number)a.get("processingTimeMs")).longValue() : 0;
+                long tb = b.get("processingTimeMs") instanceof Number ? ((Number)b.get("processingTimeMs")).longValue() : 0;
+                return Long.compare(tb, ta);
+            });
+        } catch (Exception e) {
+            // Tomcat 없는 환경에서는 빈 목록 반환
+        }
+        return result;
+    }
+
+    // ── DB 커넥션 풀 ────────────────────────────────────────────────────────
+
+    public List<Map<String, Object>> getConnectionPools() {
+        MBeanServer mbs = ManagementFactory.getPlatformMBeanServer();
+        List<Map<String, Object>> result = new ArrayList<>();
+        result.addAll(queryLocalPools(mbs, "com.zaxxer.hikari:type=PoolStats,*",           "hikari"));
+        result.addAll(queryLocalPools(mbs, "Catalina:type=DataSource,*",                    "tomcat-jdbc"));
+        result.addAll(queryLocalPools(mbs, "org.apache.commons.pool2:type=GenericObjectPool,*", "dbcp2"));
+        return result;
+    }
+
+    private List<Map<String, Object>> queryLocalPools(MBeanServer mbs, String patternStr, String poolType) {
+        List<Map<String, Object>> result = new ArrayList<>();
+        try {
+            Set<ObjectName> names = mbs.queryNames(new ObjectName(patternStr), null);
+            for (ObjectName on : names) {
+                Map<String, Object> p = new LinkedHashMap<>();
+                p.put("poolType", poolType);
+                p.put("poolName", on.getKeyProperty("pool") != null ? on.getKeyProperty("pool")
+                    : on.getKeyProperty("name") != null ? on.getKeyProperty("name") : on.toString());
+                p.put("totalConnections",  toLong(safeAttr(mbs, on, "TotalConnections",  safeAttr(mbs, on, "numConnections", -1L))));
+                p.put("activeConnections", toLong(safeAttr(mbs, on, "ActiveConnections",  safeAttr(mbs, on, "numBusyConnections", -1L))));
+                p.put("idleConnections",   toLong(safeAttr(mbs, on, "IdleConnections",    safeAttr(mbs, on, "numIdleConnections", -1L))));
+                p.put("pendingThreads",    toLong(safeAttr(mbs, on, "ThreadsAwaitingConnection", safeAttr(mbs, on, "numThreadsAwaitingCheckout", -1L))));
+                p.put("maxPoolSize",       toLong(safeAttr(mbs, on, "MaximumPoolSize",    safeAttr(mbs, on, "maxPoolSize", -1L))));
+                p.put("minIdle",           toLong(safeAttr(mbs, on, "MinimumIdle",        safeAttr(mbs, on, "minPoolSize", -1L))));
+                result.add(p);
+            }
+        } catch (Exception ignored) {}
+        return result;
+    }
+
+    private Object safeAttr(MBeanServer mbs, ObjectName on, String attr, Object def) {
+        try { return mbs.getAttribute(on, attr); } catch (Exception e) { return def; }
+    }
+    private long toLong(Object v) { return v instanceof Number ? ((Number)v).longValue() : -1L; }
+
+    private static int stateOrder(String s) {
+        return switch (s) {
+            case "BLOCKED"       -> 0;
+            case "WAITING"       -> 1;
+            case "TIMED_WAITING" -> 2;
+            case "RUNNABLE"      -> 3;
+            default              -> 4;
+        };
+    }
+}

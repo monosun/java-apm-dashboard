@@ -6,7 +6,7 @@
 
     <groupId>com.monosun.monitor</groupId>
     <artifactId>java-monitor</artifactId>
-    <version>1.3.0</version>
+    <version>1.4.0</version>
     <packaging>jar</packaging>
     <name>Java APM Dashboard</name>
 
@@ -36,6 +36,7 @@
 
     <build>
         <plugins>
+            <!-- 메인 대시보드 JAR (shade) -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-shade-plugin</artifactId>
@@ -59,6 +60,34 @@
                                     </excludes>
                                 </filter>
                             </filters>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!-- Agent JAR: 대상 JVM에 -javaagent 로 부착 -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <version>3.3.0</version>
+                <executions>
+                    <execution>
+                        <id>agent-jar</id>
+                        <phase>package</phase>
+                        <goals><goal>jar</goal></goals>
+                        <configuration>
+                            <classifier>agent</classifier>
+                            <includes>
+                                <include>com/monosun/monitor/agent/**</include>
+                            </includes>
+                            <archive>
+                                <manifestEntries>
+                                    <Premain-Class>com.monosun.monitor.agent.ThreadMonitorAgent</Premain-Class>
+                                    <Agent-Class>com.monosun.monitor.agent.ThreadMonitorAgent</Agent-Class>
+                                    <Can-Redefine-Classes>false</Can-Redefine-Classes>
+                                    <Can-Retransform-Classes>false</Can-Retransform-Classes>
+                                </manifestEntries>
+                            </archive>
                         </configuration>
                     </execution>
                 </executions>

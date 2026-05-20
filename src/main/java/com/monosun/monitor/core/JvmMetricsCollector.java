@@ -172,6 +172,61 @@ public class JvmMetricsCollector {
         };
     }
 
+    /** 단일 스레드 상세 (전체 스택 트레이스 + 잠금 정보) */
+    public Map<String, Object> getThreadDetail(long id) {
+        ThreadInfo[] infos = threadMX.getThreadInfo(new long[]{id}, Integer.MAX_VALUE);
+        if (infos.length == 0 || infos[0] == null) return null;
+        ThreadInfo ti = infos[0];
+        boolean cpuOk    = threadMX.isThreadCpuTimeSupported() && threadMX.isThreadCpuTimeEnabled();
+        boolean timingOk = threadMX.isThreadContentionMonitoringSupported()
+                        && threadMX.isThreadContentionMonitoringEnabled();
+
+        Map<String, Object> t = new java.util.LinkedHashMap<>();
+        t.put("id",        ti.getThreadId());
+        t.put("name",      ti.getThreadName());
+        t.put("state",     ti.getThreadState().name());
+        t.put("daemon",    ti.isDaemon());
+        t.put("priority",  ti.getPriority());
+        t.put("inNative",  ti.isInNative());
+        t.put("suspended", ti.isSuspended());
+        if (cpuOk) {
+            long cpuNs  = threadMX.getThreadCpuTime(id);
+            long userNs = threadMX.getThreadUserTime(id);
+            if (cpuNs  >= 0) t.put("cpuMs",  cpuNs  / 1_000_000L);
+            if (userNs >= 0) t.put("userMs", userNs / 1_000_000L);
+        }
+        if (timingOk) {
+            t.put("blockedCount",  ti.getBlockedCount());
+            t.put("blockedTimeMs", ti.getBlockedTime());
+            t.put("waitedCount",   ti.getWaitedCount());
+            t.put("waitedTimeMs",  ti.getWaitedTime());
+        }
+        if (ti.getLockName()      != null) t.put("lockName",    ti.getLockName());
+        if (ti.getLockOwnerName() != null) t.put("lockOwner",   ti.getLockOwnerName());
+        if (ti.getLockOwnerId()   >= 0)    t.put("lockOwnerId", ti.getLockOwnerId());
+
+        java.lang.management.MonitorInfo[] mons = ti.getLockedMonitors();
+        if (mons.length > 0) {
+            java.util.List<String> monList = new java.util.ArrayList<>();
+            for (java.lang.management.MonitorInfo m : mons)
+                monList.add(m.getClassName() + '@' + Integer.toHexString(m.getIdentityHashCode())
+                    + " (depth=" + m.getLockedStackDepth() + ')');
+            t.put("lockedMonitors", monList);
+        }
+        java.lang.management.LockInfo[] syncs = ti.getLockedSynchronizers();
+        if (syncs.length > 0) {
+            java.util.List<String> syncList = new java.util.ArrayList<>();
+            for (java.lang.management.LockInfo li : syncs)
+                syncList.add(li.getClassName() + '@' + Integer.toHexString(li.getIdentityHashCode()));
+            t.put("lockedSynchronizers", syncList);
+        }
+        java.util.List<String> frames = new java.util.ArrayList<>();
+        for (StackTraceElement e : ti.getStackTrace()) frames.add(e.toString());
+        t.put("stackTrace", frames);
+        t.put("stackDepth", frames.size());
+        return t;
+    }
+
     /** 전체 스레드 덤프 (text/plain) */
     public String getThreadDump() {
         long[] ids = threadMX.getAllThreadIds();

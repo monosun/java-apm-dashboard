@@ -19,9 +19,10 @@ public final class MonitorConfig {
     private static final String RESOURCE_NAME = "monitor.properties";
 
     // ── HTTP 서버 ────────────────────────────────────────────────────────────
-    public final int    httpPort;
-    public final int    printIntervalSec;
-    public final int    spanBufferSize;
+    public final int     httpPort;
+    public final int     printIntervalSec;
+    public final int     spanBufferSize;
+    public final boolean tracesEnabled;
 
     // ── 원격 JMX ────────────────────────────────────────────────────────────
     public final boolean remoteEnabled;
@@ -31,6 +32,12 @@ public final class MonitorConfig {
     public final String  remotePassword;
     public final int     remotePollIntervalSec;
     public final int     remoteReconnectIntervalSec;
+
+    // ── Agent HTTP 연결 ──────────────────────────────────────────────────────
+    public final boolean agentEnabled;
+    public final String  agentHost;
+    public final int     agentPort;
+    public final int     agentPollIntervalSec;
 
     // ── 경고 임계치 ──────────────────────────────────────────────────────────
     public final double heapAlertPercent;
@@ -85,6 +92,7 @@ public final class MonitorConfig {
         this.httpPort             = i(p, "server.http.port",                    9090);
         this.printIntervalSec     = i(p, "server.print.interval.sec",           15);
         this.spanBufferSize       = i(p, "server.span.buffer.size",             1000);
+        this.tracesEnabled        = b(p, "server.traces.enabled",               true);
 
         this.remoteEnabled              = b(p, "remote.jmx.enabled",                  false);
         this.remoteHost                 = s(p, "remote.jmx.host",                     "localhost");
@@ -93,6 +101,11 @@ public final class MonitorConfig {
         this.remotePassword             = s(p, "remote.jmx.password",                 "");
         this.remotePollIntervalSec      = i(p, "remote.jmx.poll.interval.sec",        5);
         this.remoteReconnectIntervalSec = i(p, "remote.jmx.reconnect.interval.sec",   30);
+
+        this.agentEnabled            = b(p, "agent.enabled",          false);
+        this.agentHost               = s(p, "agent.host",             "localhost");
+        this.agentPort               = i(p, "agent.port",             7979);
+        this.agentPollIntervalSec    = i(p, "agent.poll.interval.sec", 5);
 
         this.heapAlertPercent      = d(p, "alert.heap.percent",        85.0);
         this.cpuAlertPercent       = d(p, "alert.cpu.percent",         80.0);
@@ -103,10 +116,12 @@ public final class MonitorConfig {
 
     public String summary() {
         return String.format(
-            "[MonitorConfig] port=%d printInterval=%ds buffer=%d remote=%s%s",
+            "[MonitorConfig] port=%d printInterval=%ds buffer=%d remote=%s%s agent=%s%s",
             httpPort, printIntervalSec, spanBufferSize,
             remoteEnabled ? "ON" : "OFF",
-            remoteEnabled ? " target=" + remoteHost + ":" + remotePort : "");
+            remoteEnabled ? " target=" + remoteHost + ":" + remotePort : "",
+            agentEnabled ? "ON" : "OFF",
+            agentEnabled ? " target=" + agentHost + ":" + agentPort : "");
     }
 
     // ── 타입 변환 헬퍼 ───────────────────────────────────────────────────────

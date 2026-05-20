@@ -1,6 +1,6 @@
 # 모니터링 대상 연동 가이드
 
-이 문서는 **Java APM Dashboard**가 외부 JVM(Tomcat, Spring Boot 등)을 JMX로 모니터링하는 방법을 설명합니다.
+이 문서는 **Java APM Dashboard v1.4.0**이 외부 JVM(Tomcat, Spring Boot 등)을 JMX 또는 Agent HTTP 방식으로 모니터링하는 방법을 설명합니다.
 
 ---
 
@@ -11,8 +11,10 @@
 4. [Spring Boot (JAR, 독립 실행)](#4-spring-boot-jar-독립-실행)
 5. [일반 Java 프로세스](#5-일반-java-프로세스)
 6. [monitor.properties 설정](#6-monitorproperties-설정)
-7. [보안 설정 (운영 환경)](#7-보안-설정-운영-환경)
-8. [문제 해결](#8-문제-해결)
+7. [Agent Library 부착 (JMX 없이 HTTP 모니터링)](#7-agent-library-부착-jmx-없이-http-모니터링)
+8. [DB 커넥션 풀 MBean 활성화](#8-db-커넥션-풀-mbean-활성화)
+9. [보안 설정 (운영 환경)](#9-보안-설정-운영-환경)
+10. [문제 해결](#10-문제-해결)
 
 ---
 
@@ -210,7 +212,156 @@ alert.error.rate.percent=10
 
 ---
 
-## 7. 보안 설정 (운영 환경)
+## 7. Agent Library 부착 (JMX 없이 HTTP 모니터링)
+
+JMX 포트를 열 수 없는 환경에서 순수 HTTP 방식으로 스레드·JVM 정보를 수집합니다.
+
+### 정적 부착 (`-javaagent:`)
+
+JVM 시작 시 `-javaagent:` 옵션으로 부착합니다.
+
+```bash
+java -javaagent:java-monitor-1.4.0-agent.jar=port=7979 -jar myapp.jar
+```
+
+기본 포트(7979)를 사용하면 `=port=7979` 인수를 생략할 수 있습니다.
+
+```bash
+java -javaagent:java-monitor-1.4.0-agent.jar -jar myapp.jar
+```
+
+**Spring Boot (systemd 서비스)**
+
+```ini
+ExecStart=/usr/bin/java \
+  -javaagent:/opt/monitor/java-monitor-1.4.0-agent.jar=port=7979 \
+  -jar myapp.jar
+```
+
+**Tomcat (`setenv.sh`)**
+
+```bash
+export JAVA_OPTS="$JAVA_OPTS -javaagent:/opt/monitor/java-monitor-1.4.0-agent.jar=port=7979"
+```
+
+### 동적 부착 (실행 중인 JVM에 Attach)
+
+JVM PID를 알면 재시작 없이 부착할 수 있습니다.
+
+```java
+import com.sun.tools.attach.VirtualMachine;
+
+VirtualMachine vm = VirtualMachine.attach("12345");  // PID
+vm.loadAgent("/opt/monitor/java-monitor-1.4.0-agent.jar", "port=7979");
+vm.detach();
+```
+
+또는 `jattach` CLI 도구를 사용합니다.
+
+```bash
+# PID 확인
+jps -l
+
+# 동적 부착
+jattach <PID> load instrument false /opt/monitor/java-monitor-1.4.0-agent.jar=port=7979
+```
+
+### Agent 노출 엔드포인트 확인
+
+```bash
+curl http://target-host:7979/agent/health
+# {"status":"UP","port":7979}
+
+curl http://target-host:7979/agent/threads
+# [...스레드 목록 JSON...]
+```
+
+### monitor.properties에서 연결
+
+```properties
+agent.enabled=true
+agent.host=target-host-or-ip
+agent.port=7979
+agent.poll.interval.sec=5
+```
+
+대시보드 `http://localhost:9090/dashboard` 에서 **Agent 연결 대상** 섹션을 확인합니다.
+
+### Agent 엔드포인트 목록
+
+| URL | 설명 |
+|-----|------|
+| `GET /agent/health` | 헬스 체크 |
+| `GET /agent/info` | JVM·에이전트 메타정보 |
+| `GET /agent/jvm` | JVM 메트릭 JSON |
+| `GET /agent/threads` | 스레드 목록 JSON |
+| `GET /agent/thread/{id}` | 단일 스레드 전체 스택 JSON |
+| `GET /agent/threaddump` | 전체 Thread Dump (text/plain) |
+| `GET /agent/deadlocks` | 데드락 감지 JSON |
+| `GET /agent/requests` | Tomcat HTTP 요청 현황 JSON |
+| `GET /agent/dbpools` | DB 커넥션 풀 상태 JSON |
+
+---
+
+## 8. DB 커넥션 풀 MBean 활성화
+
+DB 커넥션 풀 모니터링은 JMX MBean 등록이 필요합니다. JMX 연결 또는 Agent 모드 모두 대상 JVM의 로컬 MBeanServer를 통해 수집합니다.
+
+### HikariCP (Spring Boot)
+
+```yaml
+# application.yml
+spring:
+  datasource:
+    hikari:
+      register-mbeans: true
+```
+
+또는 `application.properties`:
+
+```properties
+spring.datasource.hikari.register-mbeans=true
+```
+
+등록 후 JConsole 등에서 `com.zaxxer.hikari:type=PoolStats,*` MBean이 보이면 정상입니다.
+
+### Tomcat JDBC Pool
+
+```xml
+<!-- context.xml 또는 DataSource 설정 -->
+<Resource name="jdbc/myds"
+          type="javax.sql.DataSource"
+          factory="org.apache.tomcat.jdbc.pool.DataSourceFactory"
+          jmxEnabled="true"
+          ... />
+```
+
+### Apache Commons DBCP2
+
+```java
+// 프로그래매틱 설정
+BasicDataSource ds = new BasicDataSource();
+// DBCP2는 MBeanServer에 자동 등록 (별도 설정 불필요)
+// ObjectName: org.apache.commons.pool2:type=GenericObjectPool,*
+```
+
+### 확인 방법
+
+```bash
+# JMX 연결 시
+curl http://localhost:9090/remote/dbpools
+
+# Agent 모드 시
+curl http://localhost:9090/agent/dbpools
+
+# 응답 예시
+# [{"poolName":"HikariPool-1","activeConnections":3,"idleConnections":7,
+#   "totalConnections":10,"maxPoolSize":10,"pendingThreads":0}]
+```
+
+---
+
+## 9. 보안 설정 (운영 환경)
 
 ### 인증 활성화
 
@@ -250,7 +401,7 @@ remote.jmx.password=yourPassword123
 
 ---
 
-## 8. 문제 해결
+## 10. 문제 해결
 
 | 증상 | 원인 / 해결 방법 |
 |------|-----------------|

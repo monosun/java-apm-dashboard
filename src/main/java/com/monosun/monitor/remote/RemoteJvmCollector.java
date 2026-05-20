@@ -242,6 +242,208 @@ public class RemoteJvmCollector implements AutoCloseable {
         };
     }
 
+    // ── 스레드 덤프 / 상세 ────────────────────────────────────────────────────
+
+    /** 원격 JVM 전체 스레드 덤프 (jstack 형식 text/plain) */
+    public String getThreadDump() {
+        if (!connected) return "원격 JVM에 연결되어 있지 않습니다.";
+        try {
+            ThreadInfo[] infos = threadMX.dumpAllThreads(true, true);
+            long[] deadlocked  = findDeadlockedThreads();
+            Set<Long> deadSet  = new java.util.HashSet<>();
+            for (long id : deadlocked) deadSet.add(id);
+
+            StringBuilder sb = new StringBuilder();
+            sb.append("Full Thread Dump (Remote) — ").append(java.time.Instant.now()).append('\n');
+            sb.append("target=").append(host).append(':').append(port)
+              .append(" threads=").append(threadMX.getThreadCount()).append("\n\n");
+
+            if (!deadSet.isEmpty()) {
+                sb.append("!!! DEADLOCK DETECTED — Thread IDs: ");
+                deadSet.forEach(id -> sb.append(id).append(' '));
+                sb.append("!!!\n\n");
+            }
+
+            for (ThreadInfo ti : infos) {
+                sb.append('"').append(ti.getThreadName()).append('"');
+                if (ti.isDaemon()) sb.append(" daemon");
+                sb.append(" #").append(ti.getThreadId());
+                sb.append(" prio=").append(ti.getPriority());
+                if (deadSet.contains(ti.getThreadId())) sb.append(" *** DEADLOCKED ***");
+                sb.append('\n');
+                sb.append("   java.lang.Thread.State: ").append(ti.getThreadState()).append('\n');
+                if (ti.getLockName() != null) {
+                    sb.append("   - waiting on <").append(ti.getLockName()).append('>');
+                    if (ti.getLockOwnerName() != null)
+                        sb.append(" owned by \"").append(ti.getLockOwnerName()).append('"');
+                    sb.append('\n');
+                }
+                StackTraceElement[] stack = ti.getStackTrace();
+                MonitorInfo[]       mons  = ti.getLockedMonitors();
+                Map<Integer, List<MonitorInfo>> monByDepth = new HashMap<>();
+                for (MonitorInfo m : mons)
+                    monByDepth.computeIfAbsent(m.getLockedStackDepth(), k -> new ArrayList<>()).add(m);
+                for (int i = 0; i < stack.length; i++) {
+                    sb.append("\tat ").append(stack[i]).append('\n');
+                    List<MonitorInfo> atFrame = monByDepth.get(i);
+                    if (atFrame != null)
+                        for (MonitorInfo m : atFrame)
+                            sb.append("\t- locked <").append(m.getClassName()).append('@')
+                              .append(Integer.toHexString(m.getIdentityHashCode())).append(">\n");
+                }
+                LockInfo[] syncs = ti.getLockedSynchronizers();
+                if (syncs.length > 0) {
+                    sb.append("   Locked synchronizers:\n");
+                    for (LockInfo li : syncs)
+                        sb.append("   - ").append(li.getClassName()).append('@')
+                          .append(Integer.toHexString(li.getIdentityHashCode())).append('\n');
+                }
+                sb.append('\n');
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            return "Thread dump 실패: " + e.getMessage();
+        }
+    }
+
+    /** 원격 JVM 단일 스레드 상세 (전체 스택 + 잠금 정보) */
+    public Map<String, Object> getThreadDetail(long id) {
+        if (!connected) return null;
+        try {
+            ThreadInfo[] infos = threadMX.getThreadInfo(new long[]{id}, Integer.MAX_VALUE);
+            if (infos.length == 0 || infos[0] == null) return null;
+            ThreadInfo ti = infos[0];
+            boolean cpuOk = threadMX.isThreadCpuTimeSupported() && threadMX.isThreadCpuTimeEnabled();
+
+            Map<String, Object> t = new LinkedHashMap<>();
+            t.put("id",        ti.getThreadId());
+            t.put("name",      ti.getThreadName());
+            t.put("state",     ti.getThreadState().name());
+            t.put("daemon",    ti.isDaemon());
+            t.put("priority",  ti.getPriority());
+            t.put("inNative",  ti.isInNative());
+            t.put("suspended", ti.isSuspended());
+            if (cpuOk) {
+                long cpuNs = threadMX.getThreadCpuTime(id);
+                if (cpuNs >= 0) t.put("cpuMs", cpuNs / 1_000_000L);
+            }
+            if (ti.getLockName()      != null) t.put("lockName",    ti.getLockName());
+            if (ti.getLockOwnerName() != null) t.put("lockOwner",   ti.getLockOwnerName());
+            if (ti.getLockOwnerId()   >= 0)    t.put("lockOwnerId", ti.getLockOwnerId());
+
+            StackTraceElement[] stack = ti.getStackTrace();
+            List<String> frames = new ArrayList<>();
+            for (StackTraceElement e : stack) frames.add(e.toString());
+            t.put("stackTrace", frames);
+            t.put("stackDepth", frames.size());
+            return t;
+        } catch (Exception e) {
+            LOG.fine("[RemoteJvmCollector] 스레드 상세 조회 오류: " + e.getMessage());
+            return null;
+        }
+    }
+
+    // ── HTTP 요청 처리기 (Tomcat / Spring Boot) ──────────────────────────────
+
+    /**
+     * Tomcat RequestProcessor MBean에서 활성 HTTP 요청 정보를 수집합니다.
+     * 대상 JVM이 Tomcat 기반(Spring Boot 내장 포함)일 때만 데이터가 반환됩니다.
+     * ObjectName 패턴: Catalina:type=RequestProcessor,*
+     */
+    public List<Map<String, Object>> getRequestProcessors() {
+        List<Map<String, Object>> result = new ArrayList<>();
+        if (!connected) return result;
+        try {
+            ObjectName pattern = new ObjectName("Catalina:type=RequestProcessor,*");
+            Set<ObjectName> names = mbsc.queryNames(pattern, null);
+            for (ObjectName on : names) {
+                try {
+                    Map<String, Object> r = new LinkedHashMap<>();
+                    r.put("worker",        safeAttr(on, "currentThreadName", ""));
+                    r.put("stage",         safeAttr(on, "stage", -1));
+                    r.put("currentUri",    safeAttr(on, "currentUri", ""));
+                    r.put("remoteAddr",    safeAttr(on, "remoteAddr", ""));
+                    r.put("virtualHost",   safeAttr(on, "virtualHost", ""));
+                    Object pt = safeAttr(on, "processingTime", 0L);
+                    r.put("processingTimeMs", pt instanceof Number ? ((Number)pt).longValue() : 0L);
+                    r.put("requestCount",  safeAttr(on, "requestCount", 0L));
+                    r.put("errorCount",    safeAttr(on, "errorCount", 0L));
+                    r.put("bytesSent",     safeAttr(on, "bytesSent", 0L));
+                    r.put("bytesReceived", safeAttr(on, "bytesReceived", 0L));
+                    result.add(r);
+                } catch (Exception ignored) {}
+            }
+            result.sort((a, b) -> {
+                long ta = toLong(a.get("processingTimeMs"));
+                long tb = toLong(b.get("processingTimeMs"));
+                return Long.compare(tb, ta);
+            });
+        } catch (Exception e) {
+            LOG.fine("[RemoteJvmCollector] RequestProcessor 수집 오류: " + e.getMessage());
+        }
+        return result;
+    }
+
+    // ── DB 커넥션 풀 (HikariCP / Tomcat JDBC / DBCP2) ─────────────────────────
+
+    /**
+     * 여러 커넥션 풀 MBean 패턴을 순서대로 시도해 활성 풀 정보를 수집합니다.
+     * HikariCP, Tomcat JDBC Pool, Commons DBCP2를 자동 감지합니다.
+     */
+    public List<Map<String, Object>> getConnectionPools() {
+        List<Map<String, Object>> result = new ArrayList<>();
+        if (!connected) return result;
+        // HikariCP
+        result.addAll(queryPools("com.zaxxer.hikari:type=PoolStats,*", "hikari"));
+        // Tomcat JDBC Pool
+        result.addAll(queryPools("Catalina:type=DataSource,*", "tomcat-jdbc"));
+        // Apache Commons DBCP2
+        result.addAll(queryPools("org.apache.commons.pool2:type=GenericObjectPool,*", "dbcp2"));
+        return result;
+    }
+
+    private List<Map<String, Object>> queryPools(String patternStr, String poolType) {
+        List<Map<String, Object>> result = new ArrayList<>();
+        try {
+            ObjectName pattern = new ObjectName(patternStr);
+            Set<ObjectName> names = mbsc.queryNames(pattern, null);
+            for (ObjectName on : names) {
+                try {
+                    Map<String, Object> p = new LinkedHashMap<>();
+                    p.put("poolType", poolType);
+                    p.put("poolName", on.getKeyProperty("pool") != null
+                        ? on.getKeyProperty("pool") : on.getKeyProperty("name") != null
+                        ? on.getKeyProperty("name") : on.toString());
+                    // HikariCP attributes
+                    p.put("totalConnections",  toLong(safeAttr(on, "TotalConnections",  safeAttr(on, "numConnections", -1L))));
+                    p.put("activeConnections", toLong(safeAttr(on, "ActiveConnections",  safeAttr(on, "numBusyConnections", -1L))));
+                    p.put("idleConnections",   toLong(safeAttr(on, "IdleConnections",    safeAttr(on, "numIdleConnections", -1L))));
+                    p.put("pendingThreads",    toLong(safeAttr(on, "ThreadsAwaitingConnection", safeAttr(on, "numThreadsAwaitingCheckout", -1L))));
+                    p.put("maxPoolSize",       toLong(safeAttr(on, "MaximumPoolSize",    safeAttr(on, "maxPoolSize", -1L))));
+                    p.put("minIdle",           toLong(safeAttr(on, "MinimumIdle",        safeAttr(on, "minPoolSize", -1L))));
+                    result.add(p);
+                } catch (Exception ignored) {}
+            }
+        } catch (Exception e) {
+            LOG.fine("[RemoteJvmCollector] DB Pool 수집 오류 (" + poolType + "): " + e.getMessage());
+        }
+        return result;
+    }
+
+    private Object safeAttr(ObjectName on, String attr, Object def) {
+        try { return mbsc.getAttribute(on, attr); } catch (Exception e) { return def; }
+    }
+    private long toLong(Object v) { return v instanceof Number ? ((Number)v).longValue() : -1L; }
+
+    /** 원격 JVM 데드락 탐지 */
+    public long[] findDeadlockedThreads() {
+        if (!connected) return new long[0];
+        try {
+            long[] d = threadMX.findDeadlockedThreads();
+            return d != null ? d : new long[0];
+        } catch (Exception e) { return new long[0]; }
+    }
+
     // ── 폴링 스케줄러 ────────────────────────────────────────────────────────
 
     public void startPolling(int pollSec, int reconnectSec, ScheduledExecutorService scheduler) {

@@ -2,6 +2,7 @@ package com.monosun.monitor.core;
 
 import com.monosun.monitor.config.MonitorConfig;
 import com.monosun.monitor.exporter.PrometheusExporter;
+import com.monosun.monitor.remote.AgentHttpClient;
 import com.monosun.monitor.remote.RemoteJvmCollector;
 import com.monosun.monitor.server.MetricsHttpServer;
 
@@ -33,6 +34,7 @@ public class MonitoringAgent {
     private final ScheduledExecutorService scheduler;
     private final int                  printIntervalSec;
     private final RemoteJvmCollector   remoteCollector;
+    private final AgentHttpClient      agentClient;
 
     private MonitoringAgent(Builder builder) throws IOException {
         MonitorConfig cfg      = builder.config != null ? builder.config : MonitorConfig.load();
@@ -58,9 +60,19 @@ public class MonitoringAgent {
         }
         this.remoteCollector = remote;
 
+        // Agent HTTP 클라이언트
+        AgentHttpClient agent = null;
+        if (cfg.agentEnabled) {
+            agent = new AgentHttpClient(cfg.agentHost, cfg.agentPort);
+            agent.connect();
+            agent.startPolling(cfg.agentPollIntervalSec, scheduler);
+        }
+        this.agentClient = agent;
+
         int port = builder.httpPort > 0 ? builder.httpPort : cfg.httpPort;
         PrometheusExporter exporter = new PrometheusExporter(jvmCollector, spanStorage);
-        this.httpServer = new MetricsHttpServer(port, exporter, jvmCollector, spanStorage, remoteCollector);
+        this.httpServer = new MetricsHttpServer(port, exporter, jvmCollector, spanStorage,
+            remoteCollector, agentClient, cfg.tracesEnabled);
     }
 
     // -------------------------------------------------------------------------
@@ -81,6 +93,7 @@ public class MonitoringAgent {
         scheduler.shutdownNow();
         httpServer.stop();
         if (remoteCollector != null) remoteCollector.close();
+        if (agentClient    != null) agentClient.close();
         LOG.info("[MonitoringAgent] 종료");
     }
 
@@ -92,6 +105,7 @@ public class MonitoringAgent {
     public JvmMetricsCollector  jvmCollector()    { return jvmCollector; }
     public SpanStorage          spanStorage()     { return spanStorage; }
     public RemoteJvmCollector   remoteCollector() { return remoteCollector; }
+    public AgentHttpClient      agentClient()     { return agentClient; }
 
     public void printJvmSnapshot() {
         Map<String, Object> snap = jvmCollector.snapshot();
