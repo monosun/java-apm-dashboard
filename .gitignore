@@ -1,0 +1,10 @@
+target/
+*.class
+*.jar
+!src/**
+.idea/
+*.iml
+.vscode/
+logs/
+*.log
+.claude/

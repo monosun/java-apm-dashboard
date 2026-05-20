@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Java APM Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+           background: #0F172A; color: #E2E8F0; min-height: 100vh; }
+
+    /* ── Header ─────────────────────────────────────────────────────────────── */
+    header { background: #0F172A; border-bottom: 1px solid #1E293B;
+             padding: 0 24px; height: 54px;
+             display: flex; align-items: center; justify-content: space-between;
+             position: sticky; top: 0; z-index: 100; }
+    header h1 { font-size: 1rem; font-weight: 700; color: #F8FAFC; }
+    .header-meta { display: flex; align-items: center; gap: 20px; font-size: 0.79rem; color: #64748B; }
+    .status-pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px;
+                   border-radius: 9999px; font-size: 0.75rem; font-weight: 600;
+                   background: #1E293B; }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: #10B981; animation: pulse 2s infinite; }
+    .dot.err { background: #EF4444; animation: none; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
+
+    /* ── Layout ─────────────────────────────────────────────────────────────── */
+    .page { padding: 20px 24px; max-width: 1700px; margin: 0 auto; }
+
+    /* ── Section titles ─────────────────────────────────────────────────────── */
+    .section-hd { display: flex; align-items: center; gap: 12px; margin: 0 0 14px; }
+    .section-hd h2 { font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
+                     letter-spacing: 0.08em; color: #64748B; white-space: nowrap; }
+    .section-hd::after { content:''; flex:1; height:1px; background:#1E293B; }
+    .section-badge { font-size: 0.69rem; font-weight: 600; padding: 2px 8px; border-radius: 4px; }
+    .badge-agent  { background: #1D4ED8; color: #BFDBFE; }
+    .badge-target { background: #065F46; color: #A7F3D0; }
+    .badge-warn   { background: #7C2D12; color: #FED7AA; }
+    .badge-off    { background: #1E293B; color: #64748B; }
+
+    /* ── Deadlock alert ─────────────────────────────────────────────────────── */
+    .alert-bar { display:none; background:#450A0A; border:1px solid #7F1D1D;
+                 border-radius: 8px; padding: 10px 16px; margin-bottom: 16px;
+                 font-size: 0.82rem; color: #FCA5A5; }
+    .alert-bar strong { color: #F87171; }
+
+    /* ── Cards ───────────────────────────────────────────────────────────────── */
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+             gap: 10px; margin-bottom: 16px; }
+    .card { background: #1E293B; border-radius: 8px; padding: 14px;
+            border: 1px solid #293548; }
+    .card.hi-blue   { border-color: #1D4ED8; }
+    .card.hi-orange { border-color: #C2410C; }
+    .card.hi-green  { border-color: #065F46; }
+    .card.hi-red    { border-color: #991B1B; }
+    .card.hi-purple { border-color: #6D28D9; }
+    .card.hi-yellow { border-color: #A16207; }
+    .card-label { font-size: 0.68rem; font-weight: 600; text-transform: uppercase;
+                  letter-spacing: 0.06em; color: #64748B; margin-bottom: 6px; }
+    .card-value { font-size: 1.5rem; font-weight: 700; color: #F1F5F9; line-height: 1; }
+    .card-sub   { font-size: 0.72rem; color: #475569; margin-top: 4px; }
+    .card-value.warn { color: #FCA5A5; }
+
+    /* ── Charts ─────────────────────────────────────────────────────────────── */
+    .charts-row { display: grid; gap: 14px; margin-bottom: 16px; }
+    .charts-2 { grid-template-columns: repeat(2, 1fr); }
+    .charts-3 { grid-template-columns: repeat(3, 1fr); }
+    .charts-4 { grid-template-columns: repeat(4, 1fr); }
+    @media (max-width: 1200px) { .charts-4 { grid-template-columns: repeat(2,1fr); }
+                                  .charts-3 { grid-template-columns: repeat(2,1fr); } }
+    @media (max-width: 800px)  { .charts-2, .charts-3, .charts-4 { grid-template-columns: 1fr; } }
+    .chart-box { background: #1E293B; border-radius: 8px; padding: 14px;
+                 border: 1px solid #293548; }
+    .chart-title { font-size: 0.72rem; font-weight: 600; text-transform: uppercase;
+                   letter-spacing: 0.05em; color: #64748B; margin-bottom: 10px; }
+    .chart-wrap  { position: relative; }
+    .h160 { height: 160px; }
+    .h200 { height: 200px; }
+
+    /* ── Target card ────────────────────────────────────────────────────────── */
+    .target-card { background: #1E293B; border: 1px solid #293548; border-radius: 10px;
+                   padding: 16px; margin-bottom: 20px; }
+    .target-header { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+    .target-name   { font-size: 0.9rem; font-weight: 700; color: #F1F5F9; }
+    .target-url    { font-family: monospace; font-size: 0.76rem; color: #475569; }
+    .conn-badge    { display: inline-flex; align-items: center; gap: 5px;
+                     padding: 3px 10px; border-radius: 9999px; font-size: 0.72rem; font-weight: 600; }
+    .conn-on  { background: #052E16; color: #4ADE80; }
+    .conn-off { background: #450A0A; color: #F87171; }
+    .conn-na  { background: #1E293B; color: #64748B; }
+
+    /* ── Thread table ───────────────────────────────────────────────────────── */
+    .thread-toolbar { display:flex; align-items:center; justify-content:space-between;
+                      margin-bottom: 10px; flex-wrap: wrap; gap: 8px; }
+    .pills { display: flex; flex-wrap: wrap; gap: 5px; }
+    .pill { display: inline-flex; align-items: center; gap: 4px; padding: 2px 9px;
+            border-radius: 9999px; font-size: 0.69rem; font-weight: 600; }
+    .p-blocked  { background: #450A0A; color: #FCA5A5; }
+    .p-waiting  { background: #451A03; color: #FED7AA; }
+    .p-timed    { background: #2E1065; color: #DDD6FE; }
+    .p-runnable { background: #052E16; color: #4ADE80; }
+    .p-other    { background: #1E293B; color: #94A3B8; }
+
+    .btn { display: inline-flex; align-items: center; gap: 5px; padding: 5px 12px;
+           border-radius: 5px; font-size: 0.75rem; font-weight: 600; cursor: pointer;
+           border: 1px solid #293548; background: #0F172A; color: #94A3B8;
+           transition: all .15s; text-decoration: none; }
+    .btn:hover { background: #1E293B; color: #F1F5F9; }
+
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.79rem; }
+    th { text-align: left; padding: 7px 11px; font-size: 0.67rem; font-weight: 600;
+         text-transform: uppercase; letter-spacing: 0.05em; color: #475569;
+         border-bottom: 1px solid #293548; background: #0F172A; }
+    td { padding: 6px 11px; border-bottom: 1px solid #1E293B; color: #CBD5E1; white-space: nowrap; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: #263245; }
+    .tb { display: inline-block; padding: 1px 7px; border-radius: 4px;
+          font-size: 0.67rem; font-weight: 700; letter-spacing: .03em; }
+    .tb-blocked  { background: #450A0A; color: #FCA5A5; }
+    .tb-waiting  { background: #451A03; color: #FED7AA; }
+    .tb-timed    { background: #2E1065; color: #DDD6FE; }
+    .tb-runnable { background: #052E16; color: #4ADE80; }
+    .tb-other    { background: #1E293B; color: #94A3B8; }
+    .mono { font-family: monospace; font-size: 0.72rem; color: #475569;
+            max-width: 300px; overflow: hidden; text-overflow: ellipsis; }
+    .tname { max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+    .no-data { text-align: center; color: #475569; padding: 20px 0 !important; }
+
+    /* span badges */
+    .badge { display:inline-block; padding: 1px 7px; border-radius: 9999px;
+             font-size: 0.69rem; font-weight: 600; }
+    .b-ok  { background: #052E16; color: #4ADE80; }
+    .b-err { background: #450A0A; color: #FCA5A5; }
+
+    /* Doughnut container */
+    .dual { display: grid; grid-template-columns: 240px 1fr; gap: 14px; margin-bottom: 16px; }
+    @media (max-width:800px) { .dual { grid-template-columns: 1fr; } }
+    .doughnut-wrap { position: relative; height: 200px; }
+
+    /* Placeholder when remote not configured */
+    .placeholder { background: #1E293B; border: 1px dashed #293548; border-radius: 10px;
+                   padding: 40px; text-align: center; color: #475569; margin-bottom: 20px; }
+    .placeholder h3 { font-size: 1rem; margin-bottom: 8px; color: #64748B; }
+    .placeholder code { font-size: 0.75rem; background: #0F172A; padding: 2px 6px;
+                        border-radius: 4px; color: #94A3B8; }
+  </style>
+</head>
+<body>
+
+<!-- ══════════════════════════ HEADER ══════════════════════════ -->
+<header>
+  <h1>☕ Java APM Dashboard</h1>
+  <div class="header-meta">
+    <span class="status-pill">
+      <span class="dot" id="status-dot"></span>
+      <span id="status-text">연결 중...</span>
+    </span>
+    <span>업타임 <strong id="uptime">—</strong></span>
+    <span id="agent-version" style="font-size:0.72rem"></span>
+  </div>
+</header>
+
+<div class="page">
+
+  <!-- ══════════════════ [TOP] APM 에이전트 상태 ══════════════════ -->
+  <div style="margin-bottom: 28px;">
+    <div class="section-hd">
+      <h2>APM 에이전트 상태</h2>
+      <span class="section-badge badge-agent">모니터링 에이전트</span>
+    </div>
+
+    <div id="deadlock-alert" class="alert-bar">
+      <strong>⚠ 데드락 감지!</strong>&nbsp;<span id="deadlock-msg"></span>&nbsp;
+      <a class="btn" href="/api/threaddump" target="_blank" style="font-size:0.72rem; padding:2px 8px">Thread Dump ↗</a>
+    </div>
+
+    <!-- APM summary cards -->
+    <div class="cards" id="apm-cards">
+      <div class="card hi-blue">
+        <div class="card-label">Heap 사용률</div>
+        <div class="card-value" id="a-heap-pct">—</div>
+        <div class="card-sub"  id="a-heap-mb">—</div>
+      </div>
+      <div class="card hi-orange">
+        <div class="card-label">CPU (프로세스)</div>
+        <div class="card-value" id="a-cpu">—</div>
+        <div class="card-sub"  id="a-cpu-sys">시스템: —</div>
+      </div>
+      <div class="card hi-green">
+        <div class="card-label">전체 스레드</div>
+        <div class="card-value" id="a-threads">—</div>
+        <div class="card-sub"  id="a-threads-sub">—</div>
+      </div>
+      <div class="card hi-red">
+        <div class="card-label">BLOCKED</div>
+        <div class="card-value" id="a-blocked">0</div>
+        <div class="card-sub">스레드</div>
+      </div>
+      <div class="card hi-yellow">
+        <div class="card-label">WAITING</div>
+        <div class="card-value" id="a-waiting">0</div>
+        <div class="card-sub">스레드</div>
+      </div>
+      <div class="card hi-purple">
+        <div class="card-label">TIMED_WAIT</div>
+        <div class="card-value" id="a-timed">0</div>
+        <div class="card-sub">스레드</div>
+      </div>
+      <div class="card">
+        <div class="card-label">GC 횟수</div>
+        <div class="card-value" id="a-gc">—</div>
+        <div class="card-sub"  id="a-gc-t">—</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Metaspace</div>
+        <div class="card-value" id="a-meta">—</div>
+        <div class="card-sub">MB</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Span 오류율</div>
+        <div class="card-value" id="a-errrate">—</div>
+        <div class="card-sub"  id="a-spans">누적: —</div>
+      </div>
+      <div class="card">
+        <div class="card-label">평균 응답</div>
+        <div class="card-value" id="a-avgdur">—</div>
+        <div class="card-sub">ms</div>
+      </div>
+    </div>
+
+    <!-- Charts row -->
+    <div class="charts-row charts-4">
+      <div class="chart-box">
+        <div class="chart-title">Heap 사용률 (%)</div>
+        <div class="chart-wrap h160"><canvas id="heapChart"></canvas></div>
+      </div>
+      <div class="chart-box">
+        <div class="chart-title">CPU 사용률 (%)</div>
+        <div class="chart-wrap h160"><canvas id="cpuChart"></canvas></div>
+      </div>
+      <div class="chart-box">
+        <div class="chart-title">스레드 상태 추이</div>
+        <div class="chart-wrap h160"><canvas id="threadStateChart"></canvas></div>
+      </div>
+      <div class="chart-box">
+        <div class="chart-title">GC 누적 횟수</div>
+        <div class="chart-wrap h160"><canvas id="gcChart"></canvas></div>
+      </div>
+    </div>
+
+    <!-- APM Thread table -->
+    <div class="chart-box">
+      <div class="thread-toolbar">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <span class="chart-title" style="margin:0">에이전트 스레드 목록</span>
+          <div class="pills" id="apm-thread-pills"></div>
+        </div>
+        <a class="btn" href="/api/threaddump" target="_blank">⬇ Full Thread Dump</a>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th style="width:115px">상태</th>
+            <th>스레드 이름</th>
+            <th style="width:90px;text-align:right">CPU (ms)</th>
+            <th style="width:55px;text-align:center">우선순위</th>
+            <th>대기 / 잠금</th>
+            <th>최상위 스택</th>
+          </tr></thead>
+          <tbody id="apm-thread-tbody">
+            <tr><td class="no-data" colspan="6">로딩 중...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div><!-- /APM agent section -->
+
+  <!-- ══════════════════ [BOTTOM] 모니터링 대상 ══════════════════ -->
+  <div>
+    <div class="section-hd">
+      <h2>모니터링 대상</h2>
+      <span class="section-badge" id="targets-badge">로딩 중...</span>
+    </div>
+
+    <!-- Remote target card (dynamically shown/hidden) -->
+    <div id="target-connected" style="display:none">
+
+      <div class="target-card">
+        <div class="target-header">
+          <span class="target-name" id="t-name">원격 JVM</span>
+          <span class="conn-badge conn-on" id="t-conn-badge">연결됨</span>
+          <span class="target-url"  id="t-url"></span>
+        </div>
+
+        <!-- Target summary cards -->
+        <div class="cards">
+          <div class="card hi-blue">
+            <div class="card-label">Heap</div>
+            <div class="card-value" id="t-heap-pct">—</div>
+            <div class="card-sub"  id="t-heap-mb">—</div>
+          </div>
+          <div class="card hi-orange">
+            <div class="card-label">CPU (프로세스)</div>
+            <div class="card-value" id="t-cpu">—</div>
+            <div class="card-sub"  id="t-cpu-sys">시스템: —</div>
+          </div>
+          <div class="card hi-green">
+            <div class="card-label">스레드</div>
+            <div class="card-value" id="t-threads">—</div>
+            <div class="card-sub"  id="t-threads-sub">—</div>
+          </div>
+          <div class="card hi-red">
+            <div class="card-label">BLOCKED</div>
+            <div class="card-value" id="t-blocked">—</div>
+            <div class="card-sub">스레드</div>
+          </div>
+          <div class="card">
+            <div class="card-label">GC 횟수</div>
+            <div class="card-value" id="t-gc">—</div>
+            <div class="card-sub"  id="t-gc-t">—</div>
+          </div>
+          <div class="card">
+            <div class="card-label">OS 여유 메모리</div>
+            <div class="card-value" id="t-os-free">—</div>
+            <div class="card-sub"  id="t-os-total">전체: —</div>
+          </div>
+          <div class="card">
+            <div class="card-label">업타임</div>
+            <div class="card-value" id="t-uptime">—</div>
+            <div class="card-sub"  id="t-jvm">—</div>
+          </div>
+        </div>
+
+        <!-- Target charts -->
+        <div class="charts-row charts-2" style="margin-bottom:14px">
+          <div class="chart-box">
+            <div class="chart-title">Heap 추이 (%)</div>
+            <div class="chart-wrap h160"><canvas id="tHeapChart"></canvas></div>
+          </div>
+          <div class="chart-box">
+            <div class="chart-title">CPU 추이 (%)</div>
+            <div class="chart-wrap h160"><canvas id="tCpuChart"></canvas></div>
+          </div>
+        </div>
+
+        <!-- Target thread table -->
+        <div class="chart-box" style="border:none; background:transparent; padding:0">
+          <div class="thread-toolbar">
+            <div style="display:flex; align-items:center; gap:10px;">
+              <span class="chart-title" style="margin:0">대상 스레드 목록</span>
+              <div class="pills" id="target-thread-pills"></div>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr>
+                <th style="width:115px">상태</th>
+                <th>스레드 이름</th>
+                <th style="width:90px;text-align:right">CPU (ms)</th>
+                <th>대기 / 잠금</th>
+                <th>최상위 스택</th>
+              </tr></thead>
+              <tbody id="target-thread-tbody">
+                <tr><td class="no-data" colspan="5">로딩 중...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div><!-- /target-card -->
+    </div><!-- /target-connected -->
+
+    <!-- No target configured placeholder -->
+    <div id="target-placeholder" class="placeholder">
+      <h3>모니터링 대상 미설정</h3>
+      <p style="margin-bottom:12px; font-size:0.85rem">
+        <code>monitor.properties</code>에 JMX 대상을 설정하면 Tomcat / Spring Boot 등의 JVM을 여기서 모니터링합니다.
+      </p>
+      <p style="font-size:0.8rem; color:#334155">
+        <code>remote.jmx.enabled=true</code>&nbsp;&nbsp;
+        <code>remote.jmx.host=&lt;HOST&gt;</code>&nbsp;&nbsp;
+        <code>remote.jmx.port=9999</code>
+      </p>
+    </div>
+
+    <!-- Span table at the very bottom -->
+    <div class="chart-box">
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
+        <span class="chart-title" style="margin:0">최근 트레이스 (스팬)</span>
+        <div style="display:flex; align-items:center; gap:10px;">
+          <div class="doughnut-wrap" style="height:60px; width:60px">
+            <canvas id="spanMini"></canvas>
+          </div>
+          <div style="font-size:0.75rem; color:#64748B">
+            정상: <strong id="sb-ok" style="color:#4ADE80">—</strong>&nbsp;
+            오류: <strong id="sb-err" style="color:#F87171">—</strong>
+          </div>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Operation</th><th>Duration (ms)</th><th>Status</th>
+            <th>Trace ID</th><th>시각</th>
+          </tr></thead>
+          <tbody id="spans-tbody">
+            <tr><td class="no-data" colspan="5">로딩 중...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div><!-- /targets section -->
+
+</div><!-- /page -->
+
+<script>
+const HIST = 60;
+
+// ── History buffers ───────────────────────────────────────────────────────────
+const labels = [];
+const hHeap = [], hCpu = [], hGc = [];
+const hRunnable = [], hBlocked = [], hWaiting = [], hTimed = [];
+const tHeapH = [], tCpuH = [];
+
+let remoteCache = null, remoteConnected = false;
+
+function pushH(a, v) { a.push(v); if (a.length > HIST) a.shift(); }
+function syncLabels() {
+  const t = new Date().toLocaleTimeString('ko-KR', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+  labels.push(t); if (labels.length > HIST) labels.shift();
+}
+
+// ── Chart helpers ─────────────────────────────────────────────────────────────
+function ds(label, color, fill) {
+  return { label, data: [], borderColor: color,
+           backgroundColor: fill ? color + '30' : 'transparent',
+           borderWidth: 1.5, pointRadius: 0, fill: !!fill, tension: 0.3 };
+}
+function mkChart(id, datasets) {
+  return new Chart(document.getElementById(id), {
+    type: 'line',
+    data: { labels: [], datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      interaction: { mode:'index', intersect:false },
+      plugins: { legend: { display: datasets.length > 1,
+        labels: { font:{size:10}, color:'#64748B', boxWidth:14, padding:8 } } },
+      scales: {
+        x: { display: false },
+        y: { beginAtZero: true, grid: { color: '#1E293B' },
+             ticks: { font:{size:10}, color:'#475569' },
+             border: { color: '#293548' } }
+      }
+    }
+  });
+}
+
+const heapChart  = mkChart('heapChart',  [ds('Heap %', '#3B82F6', true)]);
+const cpuChart   = mkChart('cpuChart',   [ds('CPU %',  '#F97316', true)]);
+const gcChart    = mkChart('gcChart',    [ds('GC 횟수', '#8B5CF6', true)]);
+const tsChart    = mkChart('threadStateChart', [
+  ds('RUNNABLE',     '#4ADE80', false),
+  ds('TIMED_WAIT',   '#A78BFA', false),
+  ds('WAITING',      '#FCD34D', false),
+  ds('BLOCKED',      '#F87171', false),
+]);
+const tHeapChart = mkChart('tHeapChart', [ds('Heap %', '#38BDF8', true)]);
+const tCpuChart  = mkChart('tCpuChart',  [ds('CPU %',  '#FB923C', true)]);
+
+const spanMini = new Chart(document.getElementById('spanMini'), {
+  type: 'doughnut',
+  data: { datasets: [{ data:[1,0], backgroundColor:['#4ADE80','#F87171'], borderWidth:0 }] },
+  options: { responsive:true, maintainAspectRatio:false, animation:false,
+             plugins:{ legend:{display:false} }, cutout:'65%' }
+});
+
+function updateChart(chart, arr) {
+  chart.data.labels = [...labels];
+  chart.data.datasets[0].data = [...arr];
+  chart.update('none');
+}
+function updateMulti(chart, arrs) {
+  chart.data.labels = [...labels];
+  arrs.forEach((a, i) => { chart.data.datasets[i].data = [...a]; });
+  chart.update('none');
+}
+
+// ── Main refresh ──────────────────────────────────────────────────────────────
+async function refresh() {
+  try {
+    const [jvm, stats] = await Promise.all([
+      fetch('/jvm').then(r => r.json()),
+      fetch('/api/stats').then(r => r.json()),
+    ]);
+
+    syncLabels();
+
+    const heapPct  = parseFloat(jvm['heap.usage.percent']);
+    const cpuPct   = parseFloat(jvm['cpu.process']);
+    const gc       = Number(jvm['gc.total.count']);
+    const runnable = Number(jvm['thread.runnable']       || 0);
+    const blocked  = Number(jvm['thread.blocked']        || 0);
+    const waiting  = Number(jvm['thread.waiting']        || 0);
+    const timed    = Number(jvm['thread.timed_waiting']  || 0);
+
+    pushH(hHeap,     isNaN(heapPct) ? 0 : +heapPct.toFixed(1));
+    pushH(hCpu,      isNaN(cpuPct)  ? 0 : +cpuPct.toFixed(1));
+    pushH(hGc,       gc);
+    pushH(hRunnable, runnable);
+    pushH(hBlocked,  blocked);
+    pushH(hWaiting,  waiting);
+    pushH(hTimed,    timed);
+
+    updateChart(heapChart, hHeap);
+    updateChart(cpuChart,  hCpu);
+    updateChart(gcChart,   hGc);
+    updateMulti(tsChart, [hRunnable, hTimed, hWaiting, hBlocked]);
+
+    // APM cards
+    document.getElementById('a-heap-pct').textContent  = jvm['heap.usage.percent'] ?? '—';
+    document.getElementById('a-heap-mb').textContent   = `${jvm['heap.used.mb']}/${jvm['heap.max.mb']} MB`;
+    document.getElementById('a-cpu').textContent       = jvm['cpu.process'] ?? '—';
+    document.getElementById('a-cpu-sys').textContent   = `시스템: ${jvm['cpu.system'] ?? '—'}`;
+    document.getElementById('a-threads').textContent   = jvm['thread.count'] ?? '—';
+    document.getElementById('a-threads-sub').textContent =
+      `데몬: ${jvm['thread.daemon'] ?? '—'} / 피크: ${jvm['thread.peak'] ?? '—'}`;
+    const blockedEl = document.getElementById('a-blocked');
+    blockedEl.textContent  = blocked;
+    blockedEl.className    = 'card-value' + (blocked > 0 ? ' warn' : '');
+    document.getElementById('a-waiting').textContent   = waiting;
+    document.getElementById('a-timed').textContent     = timed;
+    document.getElementById('a-gc').textContent        = jvm['gc.total.count'] ?? '—';
+    document.getElementById('a-gc-t').textContent      = `소요: ${jvm['gc.total.time.ms'] ?? '—'} ms`;
+    document.getElementById('a-meta').textContent      = jvm['metaspace.used.mb'] ?? '—';
+    document.getElementById('uptime').textContent      = fmtUp(Number(jvm['uptime.ms']));
+    document.getElementById('agent-version').textContent = jvm['jvm.name'] ? `(${jvm['jvm.name']})` : '';
+
+    const ok  = Math.max(0, stats.totalSpans - stats.errorSpans);
+    const err = stats.errorSpans;
+    document.getElementById('a-errrate').textContent   = stats.errorRate.toFixed(1) + '%';
+    document.getElementById('a-spans').textContent     = `누적: ${stats.totalSpans}`;
+    document.getElementById('a-avgdur').textContent    = stats.avgDurationMs.toFixed(1);
+    document.getElementById('sb-ok').textContent       = ok;
+    document.getElementById('sb-err').textContent      = err;
+    spanMini.data.datasets[0].data = [ok, err];
+    spanMini.update('none');
+
+    // Deadlock check via /jvm (deadlocked count not in snapshot yet, check via blocked)
+    if (blocked > 3) {
+      document.getElementById('deadlock-alert').style.display = 'block';
+      document.getElementById('deadlock-msg').textContent = `${blocked}개 스레드가 BLOCKED 상태입니다. Thread Dump로 확인하세요.`;
+    } else {
+      document.getElementById('deadlock-alert').style.display = 'none';
+    }
+
+    setStatus(true);
+  } catch(e) { setStatus(false); }
+}
+
+// ── APM thread table ──────────────────────────────────────────────────────────
+async function refreshApmThreads() {
+  try {
+    const threads = await fetch('/threads').then(r => r.json());
+    renderThreads('apm-thread-tbody', 'apm-thread-pills', threads, true);
+  } catch(_) {}
+}
+
+// ── Span table ────────────────────────────────────────────────────────────────
+async function refreshSpans() {
+  try {
+    const spans = await fetch('/traces').then(r => r.json());
+    const tbody = document.getElementById('spans-tbody');
+    if (!spans || spans.length === 0) {
+      tbody.innerHTML = '<tr><td class="no-data" colspan="5">스팬 없음</td></tr>'; return;
+    }
+    tbody.innerHTML = [...spans].reverse().slice(0, 20).map(s => {
+      const badge = s.status === 'ERROR'
+        ? '<span class="badge b-err">ERROR</span>'
+        : '<span class="badge b-ok">OK</span>';
+      return `<tr>
+        <td>${esc(s.operation)}</td>
+        <td>${s.durationMs ?? '—'}</td>
+        <td>${badge}</td>
+        <td class="mono">${s.traceId ? s.traceId.substring(0,8)+'…' : '—'}</td>
+        <td>${s.startTime ? new Date(s.startTime).toLocaleTimeString('ko-KR') : '—'}</td>
+      </tr>`;
+    }).join('');
+  } catch(_) {}
+}
+
+// ── Remote target refresh ────────────────────────────────────────────────────
+async function refreshRemote() {
+  try {
+    const status = await fetch('/remote/status').then(r => r.json());
+    const placeholder = document.getElementById('target-placeholder');
+    const connected   = document.getElementById('target-connected');
+    const badge       = document.getElementById('targets-badge');
+
+    if (!status.target) {
+      placeholder.style.display = '';
+      connected.style.display   = 'none';
+      badge.className = 'section-badge badge-off';
+      badge.textContent = '미설정';
+      remoteConnected = false; remoteCache = null; return;
+    }
+
+    document.getElementById('t-url').textContent = status.target;
+
+    if (!status.connected) {
+      placeholder.style.display = '';
+      connected.style.display   = 'none';
+      badge.className = 'section-badge badge-warn';
+      badge.textContent = '연결 끊김 — ' + status.target;
+      remoteConnected = false; remoteCache = null; return;
+    }
+
+    placeholder.style.display = 'none';
+    connected.style.display   = '';
+    badge.className = 'section-badge badge-target';
+    badge.textContent = '연결됨 — ' + status.target;
+
+    const rjvm = await fetch('/remote/jvm').then(r => r.json());
+    remoteCache = rjvm; remoteConnected = true;
+
+    // Target charts
+    const rh = parseFloat(rjvm['heap.usage.percent']);
+    const rc = parseFloat(rjvm['cpu.process']);
+    pushH(tHeapH, isNaN(rh) ? null : +rh.toFixed(1));
+    pushH(tCpuH,  isNaN(rc) ? null : +rc.toFixed(1));
+    tHeapChart.data.labels = [...labels];
+    tHeapChart.data.datasets[0].data = [...tHeapH];
+    tHeapChart.update('none');
+    tCpuChart.data.labels = [...labels];
+    tCpuChart.data.datasets[0].data = [...tCpuH];
+    tCpuChart.update('none');
+
+    // Detect target type from JVM name/version
+    const jvmName = String(rjvm['jvm.name'] || '');
+    let targetLabel = '원격 JVM';
+    if (jvmName.toLowerCase().includes('tomcat') || status.target.includes('8080')) targetLabel = 'Tomcat JVM';
+    else if (jvmName.toLowerCase().includes('spring'))                               targetLabel = 'Spring Boot JVM';
+    document.getElementById('t-name').textContent = targetLabel;
+
+    document.getElementById('t-heap-pct').textContent   = rjvm['heap.usage.percent'] ?? '—';
+    document.getElementById('t-heap-mb').textContent    = `${rjvm['heap.used.mb'] ?? '—'}/${rjvm['heap.max.mb'] ?? '—'} MB`;
+    document.getElementById('t-cpu').textContent        = rjvm['cpu.process'] ?? '—';
+    document.getElementById('t-cpu-sys').textContent    = `시스템: ${rjvm['cpu.system'] ?? '—'}`;
+    document.getElementById('t-threads').textContent    = rjvm['thread.count'] ?? '—';
+    document.getElementById('t-threads-sub').textContent= `대기: ${rjvm['thread.waiting'] ?? '—'} / 블록: ${rjvm['thread.blocked'] ?? '—'}`;
+    const tbl = Number(rjvm['thread.blocked'] || 0);
+    document.getElementById('t-blocked').textContent   = tbl;
+    document.getElementById('t-blocked').className     = 'card-value' + (tbl > 0 ? ' warn' : '');
+    document.getElementById('t-gc').textContent        = rjvm['gc.total.count'] ?? '—';
+    document.getElementById('t-gc-t').textContent      = `소요: ${rjvm['gc.total.time.ms'] ?? '—'} ms`;
+    document.getElementById('t-os-free').textContent   = mbToGb(rjvm['os.free.memory.mb']);
+    document.getElementById('t-os-total').textContent  = `전체: ${mbToGb(rjvm['os.total.memory.mb'])}`;
+    document.getElementById('t-uptime').textContent    = fmtUp(Number(rjvm['uptime.ms']));
+    document.getElementById('t-jvm').textContent       = jvmName || '—';
+
+    const rThreads = await fetch('/remote/threads').then(r => r.json());
+    renderThreads('target-thread-tbody', 'target-thread-pills', rThreads, false);
+  } catch(_) {
+    remoteConnected = false; remoteCache = null;
+  }
+}
+
+// ── Thread table renderer ────────────────────────────────────────────────────
+function renderThreads(tbodyId, pillsId, threads, showPrio) {
+  const tbody  = document.getElementById(tbodyId);
+  const pills  = document.getElementById(pillsId);
+  const cols   = showPrio ? 6 : 5;
+
+  if (!threads || threads.length === 0) {
+    tbody.innerHTML = `<tr><td class="no-data" colspan="${cols}">스레드 없음</td></tr>`;
+    if (pills) pills.innerHTML = ''; return;
+  }
+
+  const cnt = { BLOCKED:0, WAITING:0, TIMED_WAITING:0, RUNNABLE:0, other:0 };
+  for (const t of threads) {
+    if      (t.state === 'BLOCKED')       cnt.BLOCKED++;
+    else if (t.state === 'WAITING')       cnt.WAITING++;
+    else if (t.state === 'TIMED_WAITING') cnt.TIMED_WAITING++;
+    else if (t.state === 'RUNNABLE')      cnt.RUNNABLE++;
+    else cnt.other++;
+  }
+  if (pills) pills.innerHTML = [
+    cnt.BLOCKED      > 0 ? `<span class="pill p-blocked">BLOCKED ${cnt.BLOCKED}</span>` : '',
+    cnt.WAITING      > 0 ? `<span class="pill p-waiting">WAITING ${cnt.WAITING}</span>` : '',
+    cnt.TIMED_WAITING> 0 ? `<span class="pill p-timed">TIMED ${cnt.TIMED_WAITING}</span>` : '',
+    cnt.RUNNABLE     > 0 ? `<span class="pill p-runnable">RUNNABLE ${cnt.RUNNABLE}</span>` : '',
+    cnt.other        > 0 ? `<span class="pill p-other">기타 ${cnt.other}</span>` : '',
+  ].join('');
+
+  tbody.innerHTML = threads.slice(0, 100).map(t => {
+    const badge = stateBadge(t.state);
+    const lock  = t.lockOwner ? `⛔ ${esc(t.lockOwner)}`
+                : t.lockName  ? `⏳ ${esc(shortCls(t.lockName))}` : '';
+    const cpu   = t.cpuMs != null ? Number(t.cpuMs).toLocaleString() : '—';
+    const frame = esc(t.topFrame || '');
+    const name  = esc(t.name) + (t.daemon ? ' <span style="color:#475569;font-size:0.67rem">[d]</span>' : '');
+    if (showPrio) return `<tr>
+      <td>${badge}</td><td class="tname" title="${esc(t.name)}">${name}</td>
+      <td style="text-align:right">${cpu}</td>
+      <td style="text-align:center">${t.priority ?? '—'}</td>
+      <td class="mono" title="${lock}">${lock}</td>
+      <td class="mono" title="${frame}">${frame}</td></tr>`;
+    return `<tr>
+      <td>${badge}</td><td class="tname" title="${esc(t.name)}">${name}</td>
+      <td style="text-align:right">${cpu}</td>
+      <td class="mono" title="${lock}">${lock}</td>
+      <td class="mono" title="${frame}">${frame}</td></tr>`;
+  }).join('');
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function stateBadge(s) {
+  const cls = {BLOCKED:'tb-blocked',WAITING:'tb-waiting',
+               TIMED_WAITING:'tb-timed',RUNNABLE:'tb-runnable'}[s] || 'tb-other';
+  return `<span class="tb ${cls}">${s}</span>`;
+}
+function shortCls(n) {
+  const p = n.split('.'); const l = p[p.length-1];
+  const i = n.indexOf('@'); return l.split('@')[0] + (i>=0 ? '@'+n.substring(i+1) : '');
+}
+function fmtUp(ms) {
+  if (!ms || isNaN(ms)) return '—';
+  const s = Math.floor(ms/1000);
+  return `${String(Math.floor(s/3600)).padStart(2,'0')}:${String(Math.floor((s%3600)/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
+}
+function mbToGb(mb) { return mb != null ? (mb/1024).toFixed(1)+' GB' : '—'; }
+function esc(s) {
+  return s ? String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') : '—';
+}
+function setStatus(ok) {
+  document.getElementById('status-dot').className = 'dot' + (ok ? '' : ' err');
+  document.getElementById('status-text').textContent = ok ? '정상' : '연결 오류';
+}
+
+// ── Polling ───────────────────────────────────────────────────────────────────
+refresh();
+refreshApmThreads();
+refreshSpans();
+refreshRemote();
+setInterval(refresh,          3000);
+setInterval(refreshApmThreads,5000);
+setInterval(refreshSpans,     5000);
+setInterval(refreshRemote,    5000);
+</script>
+</body>
+</html>
