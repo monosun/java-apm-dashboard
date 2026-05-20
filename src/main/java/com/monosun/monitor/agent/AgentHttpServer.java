@@ -69,6 +69,9 @@ public class AgentHttpServer {
         server.createContext("/agent/deadlocks",  ex -> handle(ex, "application/json",
             () -> listToJson(collector.getDeadlockInfo())));
 
+        server.createContext("/agent/top10",      ex -> handle(ex, "application/json",
+            () -> listToJson(collector.getTopByProcessingTime(10))));
+
         server.createContext("/agent/requests",   ex -> handle(ex, "application/json",
             () -> listToJson(collector.getRequestProcessors())));
 

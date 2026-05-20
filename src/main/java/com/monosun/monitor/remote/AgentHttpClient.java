@@ -132,6 +132,13 @@ public class AgentHttpClient implements AutoCloseable {
         catch (Exception e) { return "[]"; }
     }
 
+    /** CPU 처리시간 상위 10 스레드 (전체 스택 포함, JSON 문자열) */
+    public String getTop10Json() {
+        if (!connected) return "[]";
+        try { return get("/agent/top10"); }
+        catch (Exception e) { return "[]"; }
+    }
+
     // ── 캐시된 데이터 접근자 ──────────────────────────────────────────────────
 
     public String getJvmJson()      { return jvmJson; }

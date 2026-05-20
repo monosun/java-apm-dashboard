@@ -685,6 +685,30 @@
           </div>
           <div class="dump-panel-body" id="agent-live-body"></div>
         </div>
+
+        <!-- CPU 처리시간 Top 10 -->
+        <div class="chart-box" style="margin-top:16px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+            <span class="chart-title" style="margin:0">CPU 처리시간 Top 10</span>
+            <span style="font-size:0.72rem;color:#64748B">스레드 누적 CPU 시간 기준 &nbsp;•&nbsp; 행 클릭 시 전체 스택 펼치기</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr>
+                <th style="width:32px;text-align:center">#</th>
+                <th style="width:110px">상태</th>
+                <th>스레드 이름</th>
+                <th style="width:110px;text-align:right">CPU (ms)</th>
+                <th style="width:110px;text-align:right">User (ms)</th>
+                <th style="width:80px;text-align:right">Blocked 횟수</th>
+                <th>최상위 스택</th>
+              </tr></thead>
+              <tbody id="agent-top10-tbody">
+                <tr><td class="no-data" colspan="7">로딩 중...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -730,40 +754,6 @@
     </div>
   </div>
 
-  <!-- ══════════════════ [5] 최근 트레이스 ══════════════════ -->
-  <div id="traces-section">
-    <div class="section-hd" style="margin-bottom:10px">
-      <h2>최근 트레이스 (스팬)</h2>
-      <button class="btn btn-sm" id="traces-toggle-btn" onclick="toggleTraces()" style="font-size:0.68rem;padding:2px 8px">숨기기</button>
-    </div>
-    <div id="traces-content">
-      <div class="chart-box">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-          <span class="chart-title" style="margin:0">최근 트레이스</span>
-          <div style="display:flex;align-items:center;gap:10px">
-            <div style="position:relative;height:60px;width:60px">
-              <canvas id="spanMini"></canvas>
-            </div>
-            <div style="font-size:0.75rem;color:#64748B">
-              정상: <strong id="sb-ok" style="color:#4ADE80">—</strong>&nbsp;
-              오류: <strong id="sb-err" style="color:#F87171">—</strong>
-            </div>
-          </div>
-        </div>
-        <div class="table-wrap">
-          <table>
-            <thead><tr>
-              <th>Operation</th><th>Duration (ms)</th><th>Status</th>
-              <th>Trace ID</th><th>시각</th>
-            </tr></thead>
-            <tbody id="spans-tbody">
-              <tr><td class="no-data" colspan="5">로딩 중...</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  </div>
 
 </div><!-- /page -->
 
@@ -818,10 +808,6 @@ const tsChart    = mkChart('threadStateChart',[
 const tHeapChart = mkChart('tHeapChart', [ds('Heap %','#38BDF8',true)]);
 const tCpuChart  = mkChart('tCpuChart',  [ds('CPU %', '#FB923C',true)]);
 
-const spanMini = new Chart(document.getElementById('spanMini'),{
-  type:'doughnut',data:{datasets:[{data:[1,0],backgroundColor:['#4ADE80','#F87171'],borderWidth:0}]},
-  options:{responsive:true,maintainAspectRatio:false,animation:false,
-           plugins:{legend:{display:false}},cutout:'65%'}});
 
 function updateChart(chart,arr){
   chart.data.labels=[...labels];chart.data.datasets[0].data=[...arr];chart.update('none');}
@@ -864,14 +850,9 @@ async function refresh(){
     document.getElementById('a-meta').textContent=jvm['metaspace.used.mb']??'—';
     document.getElementById('uptime').textContent=fmtUp(Number(jvm['uptime.ms']));
     document.getElementById('agent-version').textContent=jvm['jvm.name']?`(${jvm['jvm.name']})`:'';
-    const ok=Math.max(0,stats.totalSpans-stats.errorSpans);
-    const err=stats.errorSpans;
     document.getElementById('a-errrate').textContent=stats.errorRate.toFixed(1)+'%';
     document.getElementById('a-spans').textContent=`누적: ${stats.totalSpans}`;
     document.getElementById('a-avgdur').textContent=stats.avgDurationMs.toFixed(1);
-    document.getElementById('sb-ok').textContent=ok;
-    document.getElementById('sb-err').textContent=err;
-    spanMini.data.datasets[0].data=[ok,err]; spanMini.update('none');
     if(blocked>3){
       document.getElementById('deadlock-alert').style.display='block';
       document.getElementById('deadlock-msg').textContent=`${blocked}개 스레드가 BLOCKED 상태입니다. Thread Dump로 확인하세요.`;
@@ -890,20 +871,6 @@ async function refreshApmThreads(){
   }catch(_){}
 }
 
-// ── Spans ─────────────────────────────────────────────────────────────────────
-async function refreshSpans(){
-  try{
-    const spans=await fetch('/traces').then(r=>r.json());
-    const tbody=document.getElementById('spans-tbody');
-    if(!spans||spans.length===0){tbody.innerHTML='<tr><td class="no-data" colspan="5">스팬 없음</td></tr>';return;}
-    tbody.innerHTML=[...spans].reverse().slice(0,20).map(s=>{
-      const badge=s.status==='ERROR'?'<span class="badge b-err">ERROR</span>':'<span class="badge b-ok">OK</span>';
-      return`<tr><td>${esc(s.operation)}</td><td>${s.durationMs??'—'}</td><td>${badge}</td>
-        <td class="mono">${s.traceId?s.traceId.substring(0,8)+'…':'—'}</td>
-        <td>${s.startTime?new Date(s.startTime).toLocaleTimeString('ko-KR'):'—'}</td></tr>`;
-    }).join('');
-  }catch(_){}
-}
 
 // ── Remote JMX ────────────────────────────────────────────────────────────────
 async function refreshRemote(){
@@ -1242,19 +1209,6 @@ function closeDumpModal(e){
   document.getElementById('dump-modal').style.display='none';
 }
 
-// ── Traces toggle ─────────────────────────────────────────────────────────────
-let tracesVisible=true;
-function toggleTraces(){
-  tracesVisible=!tracesVisible;
-  document.getElementById('traces-content').style.display=tracesVisible?'':'none';
-  document.getElementById('traces-toggle-btn').textContent=tracesVisible?'숨기기':'보이기';
-  try{localStorage.setItem('tracesVisible',tracesVisible);}catch(_){}
-}
-// Restore preference
-try{
-  const saved=localStorage.getItem('tracesVisible');
-  if(saved==='false'){tracesVisible=true;toggleTraces();}
-}catch(_){}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function stateBadge(s){return`<span class="tb ${stateClass(s)}">${s}</span>`;}
@@ -1306,6 +1260,63 @@ async function refreshDbPools(){
   }catch(_){}
 }
 
+// ── Agent CPU 처리시간 Top 10 ────────────────────────────────────────────────
+async function refreshAgentTop10(){
+  if(!agentConnected) return;
+  try{
+    const threads=await fetch('/agent/top10').then(r=>r.json());
+    const tbody=document.getElementById('agent-top10-tbody');
+    if(!threads||threads.length===0){
+      tbody.innerHTML='<tr><td class="no-data" colspan="7">데이터 없음 (Agent 미연결 또는 스레드 없음)</td></tr>';
+      return;
+    }
+    tbody.innerHTML=threads.map((t,i)=>{
+      const badge=stateBadge(t.state);
+      const frame=esc(t.stackTrace?.[0]||'(스택 없음)');
+      const detId=`top10d${i}`;
+      const cpu=t.cpuMs!=null?Number(t.cpuMs).toLocaleString():'—';
+      const user=t.userMs!=null?Number(t.userMs).toLocaleString():'—';
+      const blk=t.blockedCount!=null?Number(t.blockedCount).toLocaleString():'—';
+      const name=esc(t.name)+(t.daemon?' <span style="color:#475569;font-size:0.67rem">[d]</span>':'');
+      return`<tr class="clickable" onclick="toggleTop10Detail('${detId}')">
+        <td style="text-align:center;color:#64748B;font-size:0.75rem;font-weight:600">${i+1}</td>
+        <td>${badge}</td>
+        <td class="tname" title="${esc(t.name)}">${name}</td>
+        <td style="text-align:right;color:#38BDF8;font-weight:600">${cpu}</td>
+        <td style="text-align:right">${user}</td>
+        <td style="text-align:right">${blk}</td>
+        <td class="mono" title="${frame}" style="max-width:260px;overflow:hidden;text-overflow:ellipsis">${frame}</td>
+      </tr>
+      <tr id="${detId}" style="display:none">
+        <td colspan="7" style="padding:0">${buildTop10Detail(t)}</td>
+      </tr>`;
+    }).join('');
+  }catch(_){}
+}
+
+function toggleTop10Detail(id){
+  const row=document.getElementById(id);
+  if(row) row.style.display=row.style.display==='none'?'':'none';
+}
+
+function buildTop10Detail(t){
+  const stats=[];
+  if(t.cpuMs!=null)         stats.push(`CPU: <strong style="color:#38BDF8">${Number(t.cpuMs).toLocaleString()} ms</strong>`);
+  if(t.userMs!=null)        stats.push(`User: ${Number(t.userMs).toLocaleString()} ms`);
+  if(t.blockedTimeMs!=null) stats.push(`Blocked: ${t.blockedCount}회 / ${Number(t.blockedTimeMs).toLocaleString()} ms`);
+  if(t.waitedTimeMs!=null)  stats.push(`Waited: ${t.waitedCount}회 / ${Number(t.waitedTimeMs).toLocaleString()} ms`);
+  if(t.lockName)            stats.push(`Lock: ${esc(t.lockName)}${t.lockOwner?` ← <span style="color:#F87171">"${esc(t.lockOwner)}"</span>`:''}`);
+  if(t.lockedMonitors?.length>0) stats.push(`Monitors: ${t.lockedMonitors.map(m=>esc(m)).join(', ')}`);
+
+  const stack=(t.stackTrace||[]).map((f,i)=>`<span style="color:${i===0?'#4ADE80':'#94A3B8'}">\tat ${esc(f)}</span>`).join('\n');
+  const statsHtml=stats.length>0?`<div style="font-size:0.72rem;color:#94A3B8;margin-bottom:10px;display:flex;gap:14px;flex-wrap:wrap">${stats.map(s=>`<span>${s}</span>`).join('')}</div>`:'';
+
+  return`<div style="background:#0F172A;padding:12px 18px;border-top:1px solid #1E293B">
+    ${statsHtml}
+    <pre style="margin:0;font-size:0.695rem;line-height:1.65;white-space:pre;overflow-x:auto;max-height:380px;overflow-y:auto;font-family:'Consolas','Menlo',monospace">${stack||'<span style="color:#475569">(스택 없음)</span>'}</pre>
+  </div>`;
+}
+
 // ── HTTP 요청 처리기 refresh ──────────────────────────────────────────────────
 async function refreshRequests(){
   try{
@@ -1333,29 +1344,20 @@ async function refreshRequests(){
 }
 
 // ── Polling ───────────────────────────────────────────────────────────────────
-async function init(){
-  try{
-    const cfg=await fetch('/api/config').then(r=>r.json());
-    if(!cfg.tracesEnabled){
-      document.getElementById('traces-section').style.display='none';
-    }
-  }catch(_){}
-}
-init();
 refresh();
 refreshApmThreads();
-refreshSpans();
 refreshRemote();
 refreshAgent();
+refreshAgentTop10();
 refreshDbPools();
 refreshRequests();
-setInterval(refresh,           3000);
-setInterval(refreshApmThreads, 5000);
-setInterval(refreshSpans,      5000);
-setInterval(refreshRemote,     5000);
-setInterval(refreshAgent,      5000);
-setInterval(refreshDbPools,    8000);
-setInterval(refreshRequests,   3000);
+setInterval(refresh,            3000);
+setInterval(refreshApmThreads,  5000);
+setInterval(refreshRemote,      5000);
+setInterval(refreshAgent,       5000);
+setInterval(refreshAgentTop10,  5000);
+setInterval(refreshDbPools,     8000);
+setInterval(refreshRequests,    3000);
 </script>
 </body>
 </html>

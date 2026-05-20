@@ -192,6 +192,10 @@ public class MetricsHttpServer {
             () -> agentClient != null && agentClient.isConnected()
                 ? agentClient.getConnectionPoolsJson() : "[]"));
 
+        server.createContext("/agent/top10", exchange -> handle(exchange, "application/json",
+            () -> agentClient != null && agentClient.isConnected()
+                ? agentClient.getTop10Json() : "[]"));
+
         server.setExecutor(Executors.newFixedThreadPool(4, r -> {
             Thread t = new Thread(r, "metrics-http");
             t.setDaemon(true);

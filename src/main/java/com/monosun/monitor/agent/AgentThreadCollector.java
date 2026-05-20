@@ -120,6 +120,48 @@ public class AgentThreadCollector {
         return sb.toString();
     }
 
+    /**
+     * CPU 처리시간 기준 상위 N 스레드 (전체 스택 트레이스 포함).
+     * 경량 1차 조회로 순위를 정한 뒤, 상위 N에 대해서만 전체 스택을 적재합니다.
+     */
+    public List<Map<String, Object>> getTopByProcessingTime(int limit) {
+        long[] ids = threadMX.getAllThreadIds();
+        if (ids.length > 500) ids = Arrays.copyOf(ids, 500);
+        boolean cpuOk    = threadMX.isThreadCpuTimeSupported() && threadMX.isThreadCpuTimeEnabled();
+        boolean timingOk = threadMX.isThreadContentionMonitoringSupported()
+                        && threadMX.isThreadContentionMonitoringEnabled();
+
+        // 1단계: CPU 시간 기반 경량 순위 결정
+        long[] cpuNs = new long[ids.length];
+        if (cpuOk) {
+            for (int i = 0; i < ids.length; i++) {
+                long ns = threadMX.getThreadCpuTime(ids[i]);
+                cpuNs[i] = ns >= 0 ? ns : 0L;
+            }
+        }
+        Integer[] order = new Integer[ids.length];
+        for (int i = 0; i < ids.length; i++) order[i] = i;
+        Arrays.sort(order, (a, b) -> Long.compare(cpuNs[b], cpuNs[a]));
+
+        // 2단계: 상위 N ID만 전체 스택으로 조회
+        int n = Math.min(limit, ids.length);
+        long[] topIds = new long[n];
+        for (int i = 0; i < n; i++) topIds[i] = ids[order[i]];
+
+        ThreadInfo[] infos = threadMX.getThreadInfo(topIds, Integer.MAX_VALUE);
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (ThreadInfo ti : infos) {
+            if (ti == null) continue;
+            result.add(toMap(ti, cpuOk, timingOk, Integer.MAX_VALUE));
+        }
+        result.sort((a, b) -> {
+            long ca = a.containsKey("cpuMs") ? (Long) a.get("cpuMs") : 0L;
+            long cb = b.containsKey("cpuMs") ? (Long) b.get("cpuMs") : 0L;
+            return Long.compare(cb, ca);
+        });
+        return result;
+    }
+
     /** 데드락 스레드 ID 배열 */
     public long[] findDeadlocked() {
         long[] d = threadMX.findDeadlockedThreads();
