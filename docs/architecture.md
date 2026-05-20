@@ -1,10 +1,10 @@
-# Java APM Dashboard v1.4.0 — 아키텍처
+# Java APM Dashboard v1.5.0 — 아키텍처
 
 ## 1. 전체 구성도
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────┐
-│                         Java APM Dashboard v1.4.0                          │
+│                         Java APM Dashboard v1.5.0                          │
 │                                                                             │
 │  ┌──────────────────┐                                                       │
 │  │  monitor.props   │  우선순위: 시스템 속성 > 외부 파일 > 클래스패스 기본값   │
@@ -38,7 +38,8 @@
 │  │  /remote/jvm       /remote/threads /remote/thread/{id}              │  │
 │  │  /remote/threaddump /remote/requests /remote/dbpools /remote/status │  │
 │  │  /agent/status     /agent/jvm     /agent/threads  /agent/thread/{id}│  │
-│  │  /agent/threaddump /agent/deadlocks /agent/requests /agent/dbpools  │  │
+│  │  /agent/threaddump /agent/deadlocks /agent/requests /agent/dbpools  │
+│  /agent/top10                                                        │  │
 │  └───────────────────────────────────────────────────────────────────┘   │
 └────────────────────────────────────────────────────────────────────────────┘
                         │
@@ -149,6 +150,7 @@
  │  │  /agent/deadlocks   │─┼───────────────────►│
  │  │  /agent/requests    │ │   JSON / text 응답   │
  │  │  /agent/dbpools     │ │                      │
+ │  │  /agent/top10       │ │                      │
  │  └─────────────────────┘ │              [MetricsHttpServer]
  │                          │                GET /agent/status
  │  ┌─────────────────────┐ │                GET /agent/jvm
@@ -158,6 +160,7 @@
  │  │ - Catalina MBeans   │ │                GET /agent/deadlocks
  │  │ - Pool MBeans       │ │                GET /agent/requests
  │  └─────────────────────┘ │                GET /agent/dbpools
+ │                          │                GET /agent/top10
  └──────────────────────────┘                      │
                                             [브라우저 대시보드]
                                               Agent 섹션 5s 갱신
@@ -212,7 +215,6 @@
 | `server.http.port` | `9090` | HTTP 서버 포트 |
 | `server.print.interval.sec` | `15` | 콘솔 JVM 스냅샷 출력 주기 |
 | `server.span.buffer.size` | `1000` | 스팬 링 버퍼 크기 |
-| `server.traces.enabled` | `true` | 대시보드 트레이스 섹션 표시 여부 |
 | `remote.jmx.enabled` | `false` | 원격 JMX 수집 활성화 |
 | `remote.jmx.host` | `localhost` | 대상 JVM 호스트 |
 | `remote.jmx.port` | `9999` | 대상 JVM JMX 포트 |
@@ -258,6 +260,7 @@
 | GET | `/agent/deadlocks` | `application/json` | Agent 데드락 감지 (프록시) |
 | GET | `/agent/requests` | `application/json` | Agent HTTP 요청 현황 (프록시) |
 | GET | `/agent/dbpools` | `application/json` | Agent DB 커넥션 풀 (프록시) |
+| GET | `/agent/top10` | `application/json` | Agent CPU 처리시간 Top 10 스레드 + 전체 스택 (프록시) |
 
 ---
 
@@ -279,15 +282,16 @@ com.monosun.monitor
 │   │                            getThreadDump(), getThreadDetail(id)
 │   │                            getRequestProcessors(), getConnectionPools()
 │   └── AgentHttpClient        Agent HTTP 폴링 클라이언트 + 프록시
-├── agent/                     ← agent JAR (java-monitor-1.4.0-agent.jar)
+├── agent/                     ← agent JAR (java-monitor-1.5.0-agent.jar)
 │   ├── ThreadMonitorAgent     premain / agentmain 진입점
 │   ├── AgentHttpServer        대상 JVM 내장 HTTP 서버 (port 7979)
 │   └── AgentThreadCollector   로컬 MXBean 수집
 │                                getThreadList(), getThreadDetail(id)
 │                                getThreadDump(), getDeadlockInfo()
 │                                getRequestProcessors(), getConnectionPools()
+│                                getTopByProcessingTime(limit) — CPU 시간 기준 상위 N 스레드
 ├── server/
-│   └── MetricsHttpServer      JDK 내장 HTTP 서버 (27개 엔드포인트)
+│   └── MetricsHttpServer      JDK 내장 HTTP 서버 (28개 엔드포인트)
 ├── exporter/
 │   └── PrometheusExporter     Prometheus text/plain 변환
 ├── annotation/
@@ -332,7 +336,7 @@ remote.jmx.poll.interval.sec=5
 **대상 JVM 시작:**
 
 ```bash
-java -javaagent:java-monitor-1.4.0-agent.jar=port=7979 -jar myapp.jar
+java -javaagent:java-monitor-1.5.0-agent.jar=port=7979 -jar myapp.jar
 ```
 
 **monitor.properties:**
@@ -347,9 +351,9 @@ agent.poll.interval.sec=5
 ### 대시보드 실행
 
 ```bash
-java -jar java-monitor-1.4.0.jar
+java -jar java-monitor-1.5.0.jar
 # 또는 설정 파일 직접 지정
-java -jar java-monitor-1.4.0.jar /etc/myconfig/monitor.properties
+java -jar java-monitor-1.5.0.jar /etc/myconfig/monitor.properties
 ```
 
 대시보드: **http://localhost:9090/dashboard**
