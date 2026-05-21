@@ -54,7 +54,11 @@ export CATALINA_OPTS="$CATALINA_OPTS \
 
 **Windows** (`%CATALINA_HOME%\bin\setenv.bat`)
 
-파일이 없으면 새로 만듭니다 (`bin\setenv.bat`):
+`setenv.bat`은 Tomcat에 기본으로 포함되지 않습니다.  
+`%CATALINA_HOME%\bin\` 디렉터리에 **직접 새 파일을 만들어야** 합니다.  
+`catalina.bat`이 시작 시 이 파일을 자동으로 불러옵니다.
+
+아래 내용으로 `%CATALINA_HOME%\bin\setenv.bat` 파일을 새로 만듭니다:
 ```bat
 @echo off
 set CATALINA_OPTS=%CATALINA_OPTS% ^
@@ -299,8 +303,10 @@ export JAVA_OPTS="$JAVA_OPTS -javaagent:/opt/monitor/java-monitor-1.5.0-agent.ja
 
 **Tomcat — Windows (`setenv.bat`)**
 
-`%CATALINA_HOME%\bin\setenv.bat` 파일에 추가:
+`setenv.bat`은 Tomcat에 기본 포함되지 않으므로 새로 만들어야 합니다.  
+`%CATALINA_HOME%\bin\setenv.bat` 파일을 아래 내용으로 생성합니다:
 ```bat
+@echo off
 set JAVA_OPTS=%JAVA_OPTS% -javaagent:C:\monitor\java-monitor-1.5.0-agent.jar=port=7979
 ```
 
