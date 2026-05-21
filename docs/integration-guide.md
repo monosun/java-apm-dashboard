@@ -45,6 +45,7 @@ JMX Remote를 활성화하려면 대상 JVM에 아래 시스템 속성을 추가
 export CATALINA_OPTS="$CATALINA_OPTS \
   -Dcom.sun.management.jmxremote \
   -Dcom.sun.management.jmxremote.port=9999 \
+  -Dcom.sun.management.jmxremote.rmi.port=9999 \
   -Dcom.sun.management.jmxremote.authenticate=false \
   -Dcom.sun.management.jmxremote.ssl=false \
   -Dcom.sun.management.jmxremote.local.only=false \
@@ -52,30 +53,82 @@ export CATALINA_OPTS="$CATALINA_OPTS \
 ```
 
 **Windows** (`%CATALINA_HOME%\bin\setenv.bat`)
+
+파일이 없으면 새로 만듭니다 (`bin\setenv.bat`):
 ```bat
+@echo off
 set CATALINA_OPTS=%CATALINA_OPTS% ^
   -Dcom.sun.management.jmxremote ^
   -Dcom.sun.management.jmxremote.port=9999 ^
+  -Dcom.sun.management.jmxremote.rmi.port=9999 ^
   -Dcom.sun.management.jmxremote.authenticate=false ^
   -Dcom.sun.management.jmxremote.ssl=false ^
   -Dcom.sun.management.jmxremote.local.only=false ^
   -Djava.rmi.server.hostname=192.168.1.100
 ```
 
-### 방법 B: catalina.sh 직접 수정
+> **Windows 팁**: `rmi.port`를 `port`와 동일하게 고정하면 방화벽에서 포트 1개만 열면 됩니다.
 
-`$CATALINA_HOME/bin/catalina.sh` 상단에 추가:
-```bash
-JAVA_OPTS="$JAVA_OPTS -Dcom.sun.management.jmxremote.port=9999 ..."
+### 방법 B: catalina.bat 직접 수정 (Windows)
+
+`%CATALINA_HOME%\bin\catalina.bat` 상단 `rem ----- Execute ...` 주석 바로 위에 추가:
+```bat
+set JAVA_OPTS=%JAVA_OPTS% -Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.port=9999 -Dcom.sun.management.jmxremote.rmi.port=9999 -Dcom.sun.management.jmxremote.authenticate=false -Dcom.sun.management.jmxremote.ssl=false -Djava.rmi.server.hostname=192.168.1.100
+```
+
+### 방법 C: Windows 서비스로 설치된 Tomcat (tomcatXw.exe)
+
+Tomcat을 Windows 서비스로 설치한 경우 `setenv.bat`은 적용되지 않습니다.  
+대신 **Tomcat 서비스 모니터**(`tomcat10w.exe` 또는 `tomcat9w.exe`)로 JVM 옵션을 설정합니다.
+
+1. 관리자 권한으로 `%CATALINA_HOME%\bin\tomcat10w.exe` 실행  
+   (파일명은 설치된 Tomcat 버전에 따라 `tomcat9w.exe`, `tomcat10w.exe` 등으로 다릅니다)
+2. **Java** 탭 → **Java Options** 입력란 맨 아래에 한 줄씩 추가:
+   ```
+   -Dcom.sun.management.jmxremote
+   -Dcom.sun.management.jmxremote.port=9999
+   -Dcom.sun.management.jmxremote.rmi.port=9999
+   -Dcom.sun.management.jmxremote.authenticate=false
+   -Dcom.sun.management.jmxremote.ssl=false
+   -Dcom.sun.management.jmxremote.local.only=false
+   -Djava.rmi.server.hostname=192.168.1.100
+   ```
+3. **확인** → 서비스 재시작
+
+또는 명령줄로 직접 등록할 수도 있습니다 (관리자 PowerShell):
+```powershell
+& "$env:CATALINA_HOME\bin\tomcat10.exe" //US//Tomcat10 `
+  --JvmOptions="-Dcom.sun.management.jmxremote;-Dcom.sun.management.jmxremote.port=9999;-Dcom.sun.management.jmxremote.rmi.port=9999;-Dcom.sun.management.jmxremote.authenticate=false;-Dcom.sun.management.jmxremote.ssl=false;-Djava.rmi.server.hostname=192.168.1.100"
+```
+
+> `//US//Tomcat10`의 서비스 이름은 `services.msc`에서 실제 서비스 이름을 확인하세요.
+
+### Windows 방화벽 포트 열기
+
+JMX 포트(9999)가 방화벽에서 차단되면 원격 연결이 불가능합니다.  
+관리자 권한 PowerShell 또는 cmd에서 실행합니다:
+
+```powershell
+# 인바운드 규칙 추가 (PowerShell)
+New-NetFirewallRule -DisplayName "Tomcat JMX 9999" `
+  -Direction Inbound -Protocol TCP -LocalPort 9999 -Action Allow
+
+# 또는 netsh (cmd)
+netsh advfirewall firewall add rule name="Tomcat JMX 9999" ^
+  protocol=TCP dir=in localport=9999 action=allow
 ```
 
 ### Tomcat 재시작 후 연결 확인
-```bash
-# Linux
-jconsole service:jmx:rmi:///jndi/rmi://192.168.1.100:9999/jmxrmi
 
-# 또는 telnet으로 포트 확인
-telnet 192.168.1.100 9999
+```powershell
+# Windows — 포트가 열렸는지 확인
+Test-NetConnection -ComputerName 192.168.1.100 -Port 9999
+
+# Windows — 로컬에서 수신 중인지 확인
+netstat -ano | findstr ":9999"
+
+# JConsole 연결 테스트 (JDK 설치된 경우)
+jconsole service:jmx:rmi:///jndi/rmi://192.168.1.100:9999/jmxrmi
 ```
 
 ---
@@ -238,10 +291,30 @@ ExecStart=/usr/bin/java \
   -jar myapp.jar
 ```
 
-**Tomcat (`setenv.sh`)**
+**Tomcat — Linux/macOS (`setenv.sh`)**
 
 ```bash
-export JAVA_OPTS="$JAVA_OPTS -javaagent:/opt/monitor/java-monitor-1.4.0-agent.jar=port=7979"
+export JAVA_OPTS="$JAVA_OPTS -javaagent:/opt/monitor/java-monitor-1.5.0-agent.jar=port=7979"
+```
+
+**Tomcat — Windows (`setenv.bat`)**
+
+`%CATALINA_HOME%\bin\setenv.bat` 파일에 추가:
+```bat
+set JAVA_OPTS=%JAVA_OPTS% -javaagent:C:\monitor\java-monitor-1.5.0-agent.jar=port=7979
+```
+
+**Tomcat — Windows 서비스 (`tomcatXw.exe`)**
+
+서비스로 설치된 Tomcat은 `tomcat10w.exe` Java 탭에서 추가합니다:
+```
+-javaagent:C:\monitor\java-monitor-1.5.0-agent.jar=port=7979
+```
+
+Agent 포트(7979)도 방화벽에서 열어야 대시보드가 수집할 수 있습니다:
+```powershell
+New-NetFirewallRule -DisplayName "Java Monitor Agent 7979" `
+  -Direction Inbound -Protocol TCP -LocalPort 7979 -Action Allow
 ```
 
 ### 동적 부착 (실행 중인 JVM에 Attach)
@@ -409,4 +482,31 @@ remote.jmx.password=yourPassword123
 | `ConnectException: Connection timed out` | `java.rmi.server.hostname` 미설정 또는 잘못된 IP |
 | `Authentication failed` | password 파일 권한 또는 인증 정보 확인 |
 | 대시보드에 `연결 끊김` 표시 | 대상 JVM이 종료되었거나 GC로 응답 지연 — reconnect 자동 시도 |
-| Windows에서 접속 안 됨 | 방화벽 인바운드 규칙에 9999 포트 추가 |
+| Windows에서 JMX 접속 안 됨 | 방화벽 인바운드 규칙에 9999 포트 추가 (아래 참고) |
+| Windows 서비스 Tomcat에 JMX 옵션 안 먹힘 | `setenv.bat`은 서비스 모드에서 무시됨 — `tomcatXw.exe` Java 탭에서 직접 설정 |
+| Windows에서 포트 수신 여부 확인 | `netstat -ano \| findstr ":9999"` 또는 `Test-NetConnection -Port 9999` |
+
+### Windows 방화벽 문제 상세
+
+포트가 열려 있는지 확인합니다:
+```powershell
+# 로컬에서 수신 중인지 확인
+netstat -ano | findstr ":9999"
+
+# 원격에서 접근 가능한지 확인
+Test-NetConnection -ComputerName <대상_IP> -Port 9999
+
+# 방화벽 규칙 목록 확인
+Get-NetFirewallRule -DisplayName "*9999*" | Select-Object DisplayName, Enabled, Direction, Action
+```
+
+규칙이 없으면 추가합니다:
+```powershell
+# 관리자 권한 PowerShell
+New-NetFirewallRule -DisplayName "Tomcat JMX 9999" `
+  -Direction Inbound -Protocol TCP -LocalPort 9999 -Action Allow
+
+# Agent 포트도 함께 열어두면 편리합니다
+New-NetFirewallRule -DisplayName "Java Monitor Agent 7979" `
+  -Direction Inbound -Protocol TCP -LocalPort 7979 -Action Allow
+```
