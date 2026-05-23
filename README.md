@@ -41,25 +41,120 @@ mvn clean package -DskipTests
 ### 2. 실행
 
 ```bat
-:: Windows 원클릭
+:: Windows 원클릭 (포그라운드)
 start.bat
 
-:: 명시적 실행
-scripts\run.bat 9090
-
-:: 클린 빌드 + 실행
-scripts\deploy.bat 9090
+:: 백그라운드 시작 / 종료
+scripts\startup.bat
+scripts\shutdown.bat
 ```
 
 ```bash
-# Linux / macOS
-./scripts/run.sh
+# Linux / macOS 백그라운드 시작 / 종료
+./scripts/startup.sh
+./scripts/shutdown.sh
 ```
 
 ### 3. 대시보드 접속
 
 ```
 http://localhost:9090/dashboard
+```
+
+---
+
+## scripts/ 디렉토리
+
+```
+scripts/
+├── startup.bat      Windows  — 백그라운드 시작, PID 파일 저장, 브라우저 자동 오픈
+├── shutdown.bat     Windows  — PID 파일·wmic·netstat 3단계 탐색 후 종료
+├── startup.sh       Linux/macOS — nohup 백그라운드 시작, 헬스 체크 대기
+├── shutdown.sh      Linux/macOS — SIGTERM → 15초 대기 → SIGKILL graceful 종료
+├── build.bat        Maven 빌드 (clean 옵션 포함)
+├── run.bat          포그라운드 실행 (빌드 + 실행 / 실행만 선택)
+├── run.sh           포그라운드 실행 (Linux/macOS)
+├── deploy.bat       클린 빌드 후 즉시 실행
+└── logging.properties  JUL 로그 설정 (콘솔 + 파일 로테이션)
+```
+
+### startup / shutdown 공통 특징
+
+| 항목 | 내용 |
+|------|------|
+| PID 파일 | `logs/monitor.pid` — 두 스크립트가 공유해 정확한 프로세스 추적 |
+| 이중 기동 방지 | PID 파일 + 프로세스 존재 여부 이중 확인 |
+| 헬스 체크 | 시작 후 최대 30초 `/health` 폴링으로 실제 기동 확인 |
+| 로그 | `logs/monitor.log`, `logs/gc.log`, `logs/heapdump.hprof` |
+
+### Windows 사용법
+
+```bat
+:: 백그라운드로 서버 시작 (최소화 창, 브라우저 자동 오픈)
+scripts\startup.bat
+
+:: 서버 종료
+scripts\shutdown.bat
+```
+
+`startup.bat` 단계:
+
+1. `logs\monitor.pid` 확인 → 이미 실행 중이면 종료
+2. `target\` 에서 최신 JAR 자동 탐색 (`original` / `agent` 제외)
+3. 최소화 독립 창(`start /MIN`)으로 JVM 시작
+4. `wmic` 으로 PID 확인 후 `logs\monitor.pid` 저장
+5. 헬스 체크 통과 시 브라우저 자동 오픈
+
+`shutdown.bat` 단계:
+
+1. `/health` 응답 없으면 즉시 종료
+2. PID 파일 → `wmic` → `netstat` 3단계로 PID 탐색
+3. `taskkill /F` 후 PID 파일 삭제
+
+### Linux / macOS 사용법
+
+```bash
+# 실행 권한 부여 (최초 1회)
+chmod +x scripts/startup.sh scripts/shutdown.sh
+
+# 백그라운드로 서버 시작
+./scripts/startup.sh
+
+# 포트 지정 시작
+./scripts/startup.sh 8080
+
+# 서버 종료
+./scripts/shutdown.sh
+```
+
+`startup.sh` 단계:
+
+1. PID 파일 + `kill -0` 으로 이중 기동 확인
+2. `target/` 에서 최신 JAR 탐색
+3. `nohup ... >> logs/monitor.log 2>&1 &` 로 백그라운드 시작
+4. PID 를 `logs/monitor.pid` 에 저장
+5. 30초 헬스 체크 루프 통과 시 `xdg-open` / `open` 으로 브라우저 오픈
+
+`shutdown.sh` 단계:
+
+1. `/health` 응답 없으면 즉시 종료
+2. PID 파일 → `pgrep` → `fuser` 3단계로 PID 탐색
+3. `SIGTERM` 후 15초 대기 → 미종료 시 `SIGKILL`
+4. PID 파일 삭제
+
+### 로그 확인
+
+```bash
+# 실시간 로그 확인 (Linux/macOS)
+tail -f logs/monitor.log
+
+# GC 로그
+tail -f logs/gc.log
+```
+
+```bat
+:: Windows
+type logs\monitor.log
 ```
 
 ---
