@@ -774,6 +774,9 @@ const threadSearch = { apm: '', target: '', agent: '' };
 // Tomcat RequestProcessor cache (workerThreadName → request info)
 const requestData = { remote: [], agent: [] };
 
+// Last-seen URI/IP per worker: { remote: { workerName: {uri,ip,ts} }, agent: {...} }
+const requestHistory = { remote: {}, agent: {} };
+
 // Modal state
 let currentDumpText = '';
 let currentDumpFiltered = '';
@@ -1333,6 +1336,46 @@ function buildTop10Detail(t){
 }
 
 // ── HTTP 요청 처리기 refresh ──────────────────────────────────────────────────
+function renderRequestRows(reqs, tbodyId, histKey){
+  const tbody=document.getElementById(tbodyId);
+  if(!tbody) return;
+  if(!reqs||reqs.length===0){
+    tbody.innerHTML='<tr><td class="no-data" colspan="7">Tomcat 기반 JVM 연결 시 표시됩니다</td></tr>';
+    return;
+  }
+  const hist=requestHistory[histKey];
+  const now=Date.now();
+
+  // 현재 폴에서 URI 있는 항목은 히스토리 갱신
+  for(const r of reqs){
+    if(r.worker && r.currentUri){
+      hist[r.worker]={uri:r.currentUri, ip:r.remoteAddr||'', ts:now};
+    }
+  }
+
+  tbody.innerHTML=reqs.map(r=>{
+    const active=!!(r.currentUri);
+    const cached=hist[r.worker]||{};
+    const uri=r.currentUri||cached.uri||'';
+    const ip=r.remoteAddr||cached.ip||'';
+    // 유휴 상태면 마지막 요청으로부터 경과 시간 표시
+    const ageSec=!active&&cached.ts?Math.round((now-cached.ts)/1000):null;
+    const ageLabel=ageSec!==null?`<span style="color:#475569;font-size:0.65rem;margin-left:4px">${ageSec}s ago</span>`:'';
+    const rowStyle=active?'':'opacity:0.5;';
+    const ptMs=r.processingTimeMs??0;
+    const ptCls=ptMs>5000?'warn':'';
+    return`<tr style="${rowStyle}">
+      <td class="mono">${esc(r.worker||'?')}</td>
+      <td class="mono" style="max-width:260px;overflow:hidden;text-overflow:ellipsis">${esc(uri)||'<span style="color:#334155">idle</span>'}${ageLabel}</td>
+      <td class="mono">${esc(ip)||'—'}</td>
+      <td style="text-align:right"><span class="${ptCls}">${Number(ptMs).toLocaleString()}</span></td>
+      <td style="text-align:right">${r.requestCount??'—'}</td>
+      <td style="text-align:right">${r.errorCount??0}</td>
+      <td style="text-align:right">${r.bytesSent??0}</td>
+    </tr>`;
+  }).join('');
+}
+
 async function refreshRequests(){
   try{
     // remote 요청 데이터 수집 및 캐시
@@ -1340,24 +1383,7 @@ async function refreshRequests(){
       try{
         const reqs=await fetch('/remote/requests').then(r=>r.json());
         requestData.remote=reqs||[];
-        const tbody=document.getElementById('remote-requests-tbody');
-        if(!reqs||reqs.length===0){
-          tbody.innerHTML='<tr><td class="no-data" colspan="7">활성 요청 없음 (비활성 스레드)</td></tr>';
-        } else {
-          tbody.innerHTML=reqs.map(r=>{
-            const ptMs=r.processingTimeMs??0;
-            const ptCls=ptMs>5000?'warn':ptMs>1000?'':'';
-            return`<tr>
-              <td class="mono">${esc(r.worker||'?')}</td>
-              <td class="mono" style="max-width:260px;overflow:hidden;text-overflow:ellipsis">${esc(r.currentUri||'—')}</td>
-              <td class="mono">${esc(r.remoteAddr||'—')}</td>
-              <td style="text-align:right"><span class="${ptCls}">${Number(ptMs).toLocaleString()}</span></td>
-              <td style="text-align:right">${r.requestCount??'—'}</td>
-              <td style="text-align:right">${r.errorCount??0}</td>
-              <td style="text-align:right">${r.bytesSent??0}</td>
-            </tr>`;
-          }).join('');
-        }
+        renderRequestRows(reqs,'remote-requests-tbody','remote');
       }catch(_){requestData.remote=[];}
     }
     // agent 요청 데이터 수집 및 캐시 (스택 트레이스 뷰 연동용)
