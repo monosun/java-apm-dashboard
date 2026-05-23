@@ -1,6 +1,6 @@
 # 모니터링 대상 연동 가이드
 
-이 문서는 **Java APM Dashboard v1.4.0**이 외부 JVM(Tomcat, Spring Boot 등)을 JMX 또는 Agent HTTP 방식으로 모니터링하는 방법을 설명합니다.
+이 문서는 **Java APM Dashboard v1.6.0**이 외부 JVM(Tomcat, Spring Boot 등)을 JMX 또는 Agent HTTP 방식으로 모니터링하는 방법을 설명합니다.
 
 ---
 

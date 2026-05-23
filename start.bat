@@ -8,7 +8,7 @@ set "DASHBOARD=http://localhost:9090/dashboard"
 
 echo.
 echo  =============================================
-echo   Java APM Dashboard v1.3.0
+echo   Java APM Dashboard v1.6.0
 echo   Dashboard: %DASHBOARD%
 echo  =============================================
 echo.

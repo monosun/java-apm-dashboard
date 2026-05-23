@@ -721,7 +721,7 @@
         <code>agent.enabled=true</code>&nbsp;&nbsp;
         <code>agent.host=&lt;HOST&gt;</code>&nbsp;&nbsp;
         <code>agent.port=7979</code><br>
-        <code>java -javaagent:java-monitor-agent-1.3.0.jar=port=7979 -jar your-app.jar</code>
+        <code>java -javaagent:java-monitor-1.6.0-agent.jar=port=7979 -jar your-app.jar</code>
       </p>
     </div>
   </div>
@@ -770,6 +770,9 @@ let agentConnected  = false;
 const threadData = { apm: [], target: [], agent: [] };
 const threadFilter = { apm: 'ALL', target: 'ALL', agent: 'ALL' };
 const threadSearch = { apm: '', target: '', agent: '' };
+
+// Tomcat RequestProcessor cache (workerThreadName → request info)
+const requestData = { remote: [], agent: [] };
 
 // Modal state
 let currentDumpText = '';
@@ -1029,17 +1032,29 @@ function renderLivePanel(panelId, threads, scope){
   const body=document.getElementById(panelId);
   if(!body||!body.classList.contains('open')) return; // only render if open
   if(!threads||threads.length===0){body.innerHTML='<div style="padding:16px;text-align:center;color:#475569">스레드 없음</div>';return;}
+
+  // Tomcat RequestProcessor 매칭: 스레드명 → 요청 정보
+  const reqArr=(scope==='remote'?requestData.remote:scope==='agent'?requestData.agent:[]);
+  const reqMap={};
+  for(const r of reqArr){if(r.worker) reqMap[r.worker]=r;}
+
   body.innerHTML=threads.slice(0,200).map(t=>{
     const stCls=stateClass(t.state);
     const stack=t.stackTrace||[];
     const frames=stack.slice(0,5).map((f,i)=>`<div class="dump-frame${i===0?' top':''}">\tat ${esc(f)}</div>`).join('');
     const moreBtn=stack.length>5?`<div class="dump-frame load-more" onclick="loadFullStack(this,'${scope}',${t.id})">... ${stack.length-5}개 더 (클릭하여 전체 보기)</div>`:'';
+
+    // 해당 스레드가 HTTP 요청을 처리 중이면 URI · Remote IP 배지 표시
+    const req=reqMap[t.name];
+    const reqBadge=req&&req.currentUri?`<span style="display:inline-flex;align-items:center;gap:4px;font-size:0.67rem;color:#7DD3FC;background:#0C2540;border:1px solid #1E4976;border-radius:4px;padding:1px 7px;margin-left:4px;white-space:nowrap;flex-shrink:0">🌐 <span style="color:#E2E8F0">${esc(req.currentUri)}</span> <span style="color:#64748B">←</span> <span style="color:#94A3B8">${esc(req.remoteAddr||'?')}</span></span>`:'';
+
     return`<div class="dump-entry">
       <div class="dump-thread-hdr" onclick="toggleStack(this)">
         <span class="tb ${stCls}" style="flex-shrink:0">${t.state}</span>
         <span class="dump-name">${esc(t.name)}</span>
         <span class="dump-thread-meta">#${t.id}${t.daemon?' d':''} prio=${t.priority??'?'}${t.cpuMs!=null?' cpu='+Number(t.cpuMs).toLocaleString()+'ms':''}</span>
         ${t.lockOwner?`<span style="font-size:0.68rem;color:#F87171">⛔ ${esc(t.lockOwner)}</span>`:''}
+        ${reqBadge}
       </div>
       <div class="dump-stack">${frames}${moreBtn}</div>
     </div>`;
@@ -1320,26 +1335,38 @@ function buildTop10Detail(t){
 // ── HTTP 요청 처리기 refresh ──────────────────────────────────────────────────
 async function refreshRequests(){
   try{
-    if(!remoteConnected) return;
-    const reqs=await fetch('/remote/requests').then(r=>r.json());
-    const tbody=document.getElementById('remote-requests-tbody');
-    if(!reqs||reqs.length===0){
-      tbody.innerHTML='<tr><td class="no-data" colspan="7">활성 요청 없음 (비활성 스레드)</td></tr>';
-      return;
+    // remote 요청 데이터 수집 및 캐시
+    if(remoteConnected){
+      try{
+        const reqs=await fetch('/remote/requests').then(r=>r.json());
+        requestData.remote=reqs||[];
+        const tbody=document.getElementById('remote-requests-tbody');
+        if(!reqs||reqs.length===0){
+          tbody.innerHTML='<tr><td class="no-data" colspan="7">활성 요청 없음 (비활성 스레드)</td></tr>';
+        } else {
+          tbody.innerHTML=reqs.map(r=>{
+            const ptMs=r.processingTimeMs??0;
+            const ptCls=ptMs>5000?'warn':ptMs>1000?'':'';
+            return`<tr>
+              <td class="mono">${esc(r.worker||'?')}</td>
+              <td class="mono" style="max-width:260px;overflow:hidden;text-overflow:ellipsis">${esc(r.currentUri||'—')}</td>
+              <td class="mono">${esc(r.remoteAddr||'—')}</td>
+              <td style="text-align:right"><span class="${ptCls}">${Number(ptMs).toLocaleString()}</span></td>
+              <td style="text-align:right">${r.requestCount??'—'}</td>
+              <td style="text-align:right">${r.errorCount??0}</td>
+              <td style="text-align:right">${r.bytesSent??0}</td>
+            </tr>`;
+          }).join('');
+        }
+      }catch(_){requestData.remote=[];}
     }
-    tbody.innerHTML=reqs.map(r=>{
-      const ptMs=r.processingTimeMs??0;
-      const ptCls=ptMs>5000?'warn':ptMs>1000?'':'';
-      return`<tr>
-        <td class="mono">${esc(r.worker||'?')}</td>
-        <td class="mono" style="max-width:260px;overflow:hidden;text-overflow:ellipsis">${esc(r.currentUri||'—')}</td>
-        <td class="mono">${esc(r.remoteAddr||'—')}</td>
-        <td style="text-align:right"><span class="${ptCls}">${Number(ptMs).toLocaleString()}</span></td>
-        <td style="text-align:right">${r.requestCount??'—'}</td>
-        <td style="text-align:right">${r.errorCount??0}</td>
-        <td style="text-align:right">${r.bytesSent??0}</td>
-      </tr>`;
-    }).join('');
+    // agent 요청 데이터 수집 및 캐시 (스택 트레이스 뷰 연동용)
+    if(agentConnected){
+      try{
+        const ar=await fetch('/agent/requests').then(r=>r.json());
+        requestData.agent=ar||[];
+      }catch(_){requestData.agent=[];}
+    }
   }catch(_){}
 }
 

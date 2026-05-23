@@ -13,7 +13,7 @@ setlocal EnableDelayedExpansion
 
 set SCRIPT_DIR=%~dp0
 set PROJECT_DIR=%SCRIPT_DIR%..
-set TARGET_JAR=%PROJECT_DIR%\target\java-monitor-1.0.0.jar
+set TARGET_JAR=%PROJECT_DIR%\target\java-monitor-1.6.0.jar
 set MAIN_CLASS=com.monosun.monitor.demo.MonitoringDemo
 set SRC_DIR=%PROJECT_DIR%\src\main\java
 set CLASS_DIR=%PROJECT_DIR%\target\classes
@@ -35,7 +35,7 @@ if not exist "%LOG_DIR%" mkdir "%LOG_DIR%"
 
 echo.
 echo  ==========================================
-echo   Java Performance Monitor v1.0.0
+echo   Java APM Dashboard v1.6.0
 echo   Package: com.monosun.monitor
 echo  ==========================================
 echo.
