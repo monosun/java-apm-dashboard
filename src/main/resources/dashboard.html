@@ -244,6 +244,19 @@
     .dump-search { padding: 4px 10px; border-radius:5px; border:1px solid #293548;
                    background:#0F172A; color:#CBD5E1; font-size:0.75rem; flex:1; min-width:180px; }
     .dump-search:focus { outline:none; border-color:#3B82F6; }
+
+    /* ── Method badge & Request detail modal ────────────────────────────── */
+    .method-badge { display:inline-block; padding:1px 8px; border-radius:4px; font-size:0.72rem;
+                    font-weight:700; font-family:monospace; background:#1D4ED8; color:#BFDBFE; }
+    .req-section { background:#0F172A; border-radius:6px; padding:10px 12px; margin-bottom:10px; }
+    .req-section-hd { font-size:0.66rem; font-weight:700; text-transform:uppercase;
+                      letter-spacing:.05em; color:#475569; margin-bottom:8px; }
+    .req-uri { font-family:monospace; font-size:0.85rem; color:#38BDF8; word-break:break-all; display:block; margin-top:4px; }
+    .req-qs  { font-family:monospace; font-size:0.78rem; color:#7DD3FC; word-break:break-all; display:block; margin-top:3px; }
+    .req-meta-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(170px,1fr)); gap:6px; margin-top:8px; }
+    .refresh-sel { padding:3px 8px; border-radius:5px; border:1px solid #293548;
+                   background:#0F172A; color:#CBD5E1; font-size:0.72rem; cursor:pointer; }
+    .refresh-sel:focus { outline:none; border-color:#3B82F6; }
   </style>
 </head>
 <body>
@@ -282,6 +295,22 @@
       </div>
       <div class="modal-ft">
         <button class="btn btn-sm" onclick="closeDumpModal()">닫기</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════ Request Detail Modal ══════════════════ -->
+<div id="req-modal" style="display:none">
+  <div class="modal-backdrop" onclick="closeReqModal(event)">
+    <div class="modal-box wide" onclick="event.stopPropagation()">
+      <div class="modal-hd">
+        <span class="modal-title" id="req-modal-title">HTTP 요청 상세</span>
+        <button class="modal-close" onclick="closeReqModal()">✕</button>
+      </div>
+      <div class="modal-body" id="req-modal-body">로딩 중...</div>
+      <div class="modal-ft">
+        <button class="btn btn-sm" onclick="closeReqModal()">닫기</button>
       </div>
     </div>
   </div>
@@ -520,7 +549,16 @@
               <input class="thread-search" type="text" placeholder="스레드 이름 검색..." oninput="setSearch('target',this.value)">
               <div class="pills" id="target-thread-pills"></div>
             </div>
-            <div style="display:flex;gap:6px;align-items:center">
+            <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+              <select id="remote-refresh-sel" class="refresh-sel"
+                      onchange="setRemoteRefreshInterval(+this.value)" title="자동 갱신 주기">
+                <option value="1">1초</option>
+                <option value="3">3초</option>
+                <option value="5" selected>5초</option>
+                <option value="10">10초</option>
+                <option value="30">30초</option>
+              </select>
+              <button class="btn btn-sm" onclick="triggerRemoteRefresh()" title="지금 갱신">⟳ 지금 갱신</button>
               <button class="btn btn-sm" onclick="openDump('remote')">Thread Dump</button>
             </div>
           </div>
@@ -557,11 +595,10 @@
           <div class="table-wrap">
             <table>
               <thead><tr>
-                <th>스레드</th><th>URI</th><th>Remote IP</th>
+                <th>스레드</th><th style="width:75px">Method</th><th>URI</th><th>Remote IP</th>
                 <th style="text-align:right">처리 시간 (ms)</th>
                 <th style="text-align:right">누적 요청</th>
                 <th style="text-align:right">오류</th>
-                <th style="text-align:right">전송 바이트</th>
               </tr></thead>
               <tbody id="remote-requests-tbody">
                 <tr><td class="no-data" colspan="7">Tomcat 기반 JVM 연결 시 표시됩니다</td></tr>
@@ -1335,6 +1372,13 @@ function buildTop10Detail(t){
   </div>`;
 }
 
+// ── IP 정규화 ─────────────────────────────────────────────────────────────────
+function normalizeIp(ip){
+  if(!ip) return '';
+  if(ip==='0:0:0:0:0:0:0:1'||ip==='::1') return '127.0.0.1';
+  return ip;
+}
+
 // ── HTTP 요청 처리기 refresh ──────────────────────────────────────────────────
 function renderRequestRows(reqs, tbodyId, histKey){
   const tbody=document.getElementById(tbodyId);
@@ -1346,34 +1390,139 @@ function renderRequestRows(reqs, tbodyId, histKey){
   const hist=requestHistory[histKey];
   const now=Date.now();
 
-  // 현재 폴에서 URI 있는 항목은 히스토리 갱신
   for(const r of reqs){
     if(r.worker && r.currentUri){
       hist[r.worker]={uri:r.currentUri, ip:r.remoteAddr||'', ts:now};
     }
   }
 
-  tbody.innerHTML=reqs.map(r=>{
+  tbody.innerHTML=reqs.map((r,idx)=>{
     const active=!!(r.currentUri);
     const cached=hist[r.worker]||{};
     const uri=r.currentUri||cached.uri||'';
-    const ip=r.remoteAddr||cached.ip||'';
-    // 유휴 상태면 마지막 요청으로부터 경과 시간 표시
+    const rawIp=r.remoteAddr||cached.ip||'';
+    const ip=normalizeIp(rawIp);
     const ageSec=!active&&cached.ts?Math.round((now-cached.ts)/1000):null;
     const ageLabel=ageSec!==null?`<span style="color:#475569;font-size:0.65rem;margin-left:4px">${ageSec}s ago</span>`:'';
-    const rowStyle=active?'':'opacity:0.5;';
+    const rowStyle=active?'':'opacity:0.55;';
     const ptMs=r.processingTimeMs??0;
     const ptCls=ptMs>5000?'warn':'';
-    return`<tr style="${rowStyle}">
-      <td class="mono">${esc(r.worker||'?')}</td>
-      <td class="mono" style="max-width:260px;overflow:hidden;text-overflow:ellipsis">${esc(uri)||'<span style="color:#334155">idle</span>'}${ageLabel}</td>
+    const method=r.method||'';
+    const workerName=r.worker||'—';
+    return`<tr class="clickable" style="${rowStyle}" onclick="openRequestDetail(${idx},'${histKey}')">
+      <td class="mono" title="${esc(workerName)}" style="max-width:190px;overflow:hidden;text-overflow:ellipsis">${esc(workerName)}</td>
+      <td>${method?`<span class="method-badge">${esc(method)}</span>`:'<span style="color:#334155">—</span>'}</td>
+      <td class="mono" style="max-width:240px;overflow:hidden;text-overflow:ellipsis">${esc(uri)||'<span style="color:#334155">idle</span>'}${ageLabel}</td>
       <td class="mono">${esc(ip)||'—'}</td>
       <td style="text-align:right"><span class="${ptCls}">${Number(ptMs).toLocaleString()}</span></td>
       <td style="text-align:right">${r.requestCount??'—'}</td>
       <td style="text-align:right">${r.errorCount??0}</td>
-      <td style="text-align:right">${r.bytesSent??0}</td>
     </tr>`;
   }).join('');
+}
+
+// ── Request Detail Modal ──────────────────────────────────────────────────────
+async function openRequestDetail(idx, source){
+  const req=requestData[source]?.[idx];
+  if(!req) return;
+  const scopeKey=source==='remote'?'target':'agent';
+  const thread=threadData[scopeKey]?.find(t=>t.name===req.worker);
+  document.getElementById('req-modal').style.display='';
+  document.getElementById('req-modal-title').textContent=`HTTP 요청 상세 — ${req.worker||'?'}`;
+  document.getElementById('req-modal-body').innerHTML='<div style="padding:20px;text-align:center;color:#475569">로딩 중...</div>';
+  let threadDetail=null;
+  if(thread){
+    const url=source==='remote'?`/remote/thread/${thread.id}`:`/agent/thread/${thread.id}`;
+    try{ threadDetail=await fetch(url).then(r=>r.json()); }catch(_){}
+  }
+  document.getElementById('req-modal-body').innerHTML=buildRequestDetailHtml(req,threadDetail||thread);
+}
+
+function buildRequestDetailHtml(req, thread){
+  const uri=req.currentUri||'';
+  const qs=req.queryString||'';
+  const method=req.method||'';
+  const vHost=req.virtualHost||'';
+  const ip=normalizeIp(req.remoteAddr||'');
+  const ct=req.contentType||'';
+  const ptMs=Number(req.processingTimeMs??0);
+  const stage=Number(req.stage??-1);
+  const stageMap={'-1':'NEW','0':'IDLE','1':'PARSE','2':'PREPARE',
+    '3':'SERVICE (Active)','4':'ENDINPUT','5':'ENDOUTPUT','6':'KEEPALIVE','7':'ENDED','8':'ASYNC_WAIT'};
+  const stageStr=stageMap[String(stage)]??`Stage ${stage}`;
+  const isActive=(stage>=2&&stage<=5);
+  const stageCl=isActive?'color:#4ADE80':'color:#64748B';
+
+  let html='';
+
+  // 요청 정보
+  html+=`<div class="req-section"><div class="req-section-hd">요청 정보</div>`;
+  if(method) html+=`<span class="method-badge">${esc(method)}</span>`;
+  if(uri)    html+=`<span class="req-uri">${esc(uri)}</span>`;
+  else       html+=`<span class="req-uri" style="color:#475569">URI 없음 (유휴 상태)</span>`;
+  if(qs)     html+=`<span class="req-qs">?${esc(qs)}</span>`;
+  html+=`<div class="req-meta-grid">`;
+  if(vHost)  html+=`<div class="td-item"><div class="td-label">Virtual Host</div><div class="td-value monof">${esc(vHost)}</div></div>`;
+  html+=`<div class="td-item"><div class="td-label">Remote IP</div><div class="td-value monof">${esc(ip)||'—'}</div></div>`;
+  html+=`<div class="td-item"><div class="td-label">Stage</div><div class="td-value" style="${stageCl}">${stageStr}</div></div>`;
+  if(ct)     html+=`<div class="td-item"><div class="td-label">Content-Type</div><div class="td-value monof">${esc(ct)}</div></div>`;
+  html+=`</div></div>`;
+
+  // 처리 통계
+  html+=`<div class="req-section"><div class="req-section-hd">처리 통계</div><div class="req-meta-grid">`;
+  html+=`<div class="td-item"><div class="td-label">처리 시간</div><div class="td-value${ptMs>5000?' warn':''}">${Number(ptMs).toLocaleString()} ms</div></div>`;
+  html+=`<div class="td-item"><div class="td-label">누적 요청</div><div class="td-value">${req.requestCount??'—'}</div></div>`;
+  html+=`<div class="td-item"><div class="td-label">오류 횟수</div><div class="td-value${Number(req.errorCount)>0?' warn':''}">${req.errorCount??0}</div></div>`;
+  html+=`<div class="td-item"><div class="td-label">전송 Bytes</div><div class="td-value">${fmtBytes(req.bytesSent)}</div></div>`;
+  if(req.bytesReceived!=null) html+=`<div class="td-item"><div class="td-label">수신 Bytes</div><div class="td-value">${fmtBytes(req.bytesReceived)}</div></div>`;
+  html+=`</div></div>`;
+
+  // 스레드 정보
+  html+=`<div class="req-section"><div class="req-section-hd">처리 스레드</div>`;
+  if(thread){
+    html+=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+      <span class="tb ${stateClass(thread.state)}">${thread.state}</span>
+      <span style="font-size:0.84rem;color:#E2E8F0;font-weight:600">${esc(thread.name)}</span>
+      <span style="font-size:0.72rem;color:#64748B">#${thread.id}</span>
+    </div>`;
+    const details=[];
+    if(thread.cpuMs!=null)        details.push(`CPU: <strong style="color:#38BDF8">${Number(thread.cpuMs).toLocaleString()} ms</strong>`);
+    if(thread.priority!=null)     details.push(`우선순위: ${thread.priority}`);
+    if(thread.daemon)             details.push(`<span style="color:#64748B">daemon</span>`);
+    if(thread.blockedCount!=null) details.push(`BLOCKED: ${thread.blockedCount}회`);
+    if(details.length) html+=`<div style="font-size:0.72rem;color:#94A3B8;margin-bottom:10px;display:flex;gap:12px;flex-wrap:wrap">${details.map(s=>`<span>${s}</span>`).join('')}</div>`;
+    if(thread.lockOwner) html+=`<div class="lock-section" style="margin-bottom:10px"><div class="lock-label">대기 잠금</div><div class="lock-val">${esc(thread.lockName||'')}</div><div class="lock-val" style="color:#FCA5A5">보유: ${esc(thread.lockOwner)}</div></div>`;
+    const frames=thread.stackTrace||[];
+    if(frames.length){
+      html+=`<div class="stack-section"><div class="stack-hd">스택 트레이스 (${frames.length} 프레임)</div>`;
+      html+=frames.map((f,i)=>`<div class="stack-frame${i===0?' f0':i===1?' f1':''}"><span class="at">at </span>${esc(f)}</div>`).join('');
+      html+=`</div>`;
+    }
+  } else if(req.worker){
+    html+=`<div style="color:#475569;font-size:0.79rem">스레드 "<span style="color:#94A3B8">${esc(req.worker)}</span>" — 현재 스레드 목록에 없습니다 (유휴 상태일 수 있음)</div>`;
+  } else {
+    html+=`<div style="color:#475569;font-size:0.79rem">스레드 정보 없음</div>`;
+  }
+  html+=`</div>`;
+
+  html+=`<div style="font-size:0.68rem;color:#334155;margin-top:6px;padding:6px 10px;background:#0A1220;border-radius:4px">
+    ⓘ HTTP 요청 헤더는 JMX를 통해 노출되지 않습니다. 위 정보는 Tomcat RequestProcessor MBean에서 수집됩니다.
+  </div>`;
+
+  return html;
+}
+
+function closeReqModal(e){
+  if(e&&e.currentTarget!==e.target) return;
+  document.getElementById('req-modal').style.display='none';
+}
+
+function fmtBytes(b){
+  if(b==null||b<0) return '—';
+  const n=Number(b);
+  if(n<1024) return n+' B';
+  if(n<1048576) return (n/1024).toFixed(1)+' KB';
+  return (n/1048576).toFixed(1)+' MB';
 }
 
 async function refreshRequests(){
@@ -1396,6 +1545,29 @@ async function refreshRequests(){
   }catch(_){}
 }
 
+// ── Remote 섹션 타이머 (간격 조절 가능) ───────────────────────────────────────
+let remoteIntervalMs = 5000;
+let remoteTimerHandle = null;
+
+function scheduleRemoteTimer() {
+  if (remoteTimerHandle) clearTimeout(remoteTimerHandle);
+  remoteTimerHandle = setTimeout(async () => {
+    await refreshRemote();
+    scheduleRemoteTimer();
+  }, remoteIntervalMs);
+}
+
+function setRemoteRefreshInterval(sec) {
+  remoteIntervalMs = sec * 1000;
+  scheduleRemoteTimer();
+}
+
+async function triggerRemoteRefresh() {
+  if (remoteTimerHandle) clearTimeout(remoteTimerHandle);
+  await Promise.all([refreshRemote(), refreshRequests()]);
+  scheduleRemoteTimer();
+}
+
 // ── Polling ───────────────────────────────────────────────────────────────────
 refresh();
 refreshApmThreads();
@@ -1404,13 +1576,13 @@ refreshAgent();
 refreshAgentTop10();
 refreshDbPools();
 refreshRequests();
-setInterval(refresh,            3000);
-setInterval(refreshApmThreads,  5000);
-setInterval(refreshRemote,      5000);
-setInterval(refreshAgent,       5000);
-setInterval(refreshAgentTop10,  5000);
-setInterval(refreshDbPools,     8000);
-setInterval(refreshRequests,    3000);
+setInterval(refresh,           3000);
+setInterval(refreshApmThreads, 5000);
+scheduleRemoteTimer();                 // Remote: 사용자 설정 간격으로 타이머 관리
+setInterval(refreshAgent,      5000);
+setInterval(refreshAgentTop10, 5000);
+setInterval(refreshDbPools,    8000);
+setInterval(refreshRequests,   3000);
 </script>
 </body>
 </html>

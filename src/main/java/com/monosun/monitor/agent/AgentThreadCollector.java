@@ -258,15 +258,34 @@ public class AgentThreadCollector {
             for (ObjectName on : names) {
                 try {
                     Map<String, Object> r = new LinkedHashMap<>();
-                    r.put("worker",          safeAttr(mbs, on, "currentThreadName", ""));
-                    r.put("stage",           safeAttr(mbs, on, "stage", -1));
-                    r.put("currentUri",      safeAttr(mbs, on, "currentUri", ""));
-                    r.put("remoteAddr",      safeAttr(mbs, on, "remoteAddr", ""));
+
+                    // currentThreadName이 빈 문자열이면 ObjectName의 name 키로 폴백
+                    String threadName = String.valueOf(safeAttr(mbs, on, "currentThreadName", ""));
+                    if (threadName.isEmpty()) {
+                        String nameKey = on.getKeyProperty("name");
+                        if (nameKey != null) threadName = nameKey;
+                    }
+                    r.put("worker", threadName);
+
+                    r.put("stage",        safeAttr(mbs, on, "stage", -1));
+                    r.put("currentUri",   safeAttr(mbs, on, "currentUri", ""));
+                    r.put("method",       safeAttr(mbs, on, "method", ""));
+                    r.put("queryString",  safeAttr(mbs, on, "currentQueryString", ""));
+                    r.put("contentType",  safeAttr(mbs, on, "contentType", ""));
+                    r.put("virtualHost",  safeAttr(mbs, on, "virtualHost", ""));
+
+                    // IPv6 루프백 정규화
+                    String remoteAddr = String.valueOf(safeAttr(mbs, on, "remoteAddr", ""));
+                    if ("0:0:0:0:0:0:0:1".equals(remoteAddr) || "::1".equals(remoteAddr))
+                        remoteAddr = "127.0.0.1";
+                    r.put("remoteAddr", remoteAddr);
+
                     Object pt = safeAttr(mbs, on, "processingTime", 0L);
                     r.put("processingTimeMs", pt instanceof Number ? ((Number)pt).longValue() : 0L);
-                    r.put("requestCount",    safeAttr(mbs, on, "requestCount", 0L));
-                    r.put("errorCount",      safeAttr(mbs, on, "errorCount", 0L));
-                    r.put("bytesSent",       safeAttr(mbs, on, "bytesSent", 0L));
+                    r.put("requestCount",  safeAttr(mbs, on, "requestCount", 0L));
+                    r.put("errorCount",    safeAttr(mbs, on, "errorCount", 0L));
+                    r.put("bytesSent",     safeAttr(mbs, on, "bytesSent", 0L));
+                    r.put("bytesReceived", safeAttr(mbs, on, "bytesReceived", 0L));
                     result.add(r);
                 } catch (Exception ignored) {}
             }

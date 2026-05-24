@@ -359,11 +359,28 @@ public class RemoteJvmCollector implements AutoCloseable {
             for (ObjectName on : names) {
                 try {
                     Map<String, Object> r = new LinkedHashMap<>();
-                    r.put("worker",        safeAttr(on, "currentThreadName", ""));
-                    r.put("stage",         safeAttr(on, "stage", -1));
-                    r.put("currentUri",    safeAttr(on, "currentUri", ""));
-                    r.put("remoteAddr",    safeAttr(on, "remoteAddr", ""));
-                    r.put("virtualHost",   safeAttr(on, "virtualHost", ""));
+
+                    // currentThreadName이 빈 문자열이면 ObjectName의 name 키로 폴백
+                    String threadName = String.valueOf(safeAttr(on, "currentThreadName", ""));
+                    if (threadName.isEmpty()) {
+                        String nameKey = on.getKeyProperty("name");
+                        if (nameKey != null) threadName = nameKey;
+                    }
+                    r.put("worker", threadName);
+
+                    r.put("stage",        safeAttr(on, "stage", -1));
+                    r.put("currentUri",   safeAttr(on, "currentUri", ""));
+                    r.put("method",       safeAttr(on, "method", ""));
+                    r.put("queryString",  safeAttr(on, "currentQueryString", ""));
+                    r.put("contentType",  safeAttr(on, "contentType", ""));
+                    r.put("virtualHost",  safeAttr(on, "virtualHost", ""));
+
+                    // IPv6 루프백 정규화
+                    String remoteAddr = String.valueOf(safeAttr(on, "remoteAddr", ""));
+                    if ("0:0:0:0:0:0:0:1".equals(remoteAddr) || "::1".equals(remoteAddr))
+                        remoteAddr = "127.0.0.1";
+                    r.put("remoteAddr", remoteAddr);
+
                     Object pt = safeAttr(on, "processingTime", 0L);
                     r.put("processingTimeMs", pt instanceof Number ? ((Number)pt).longValue() : 0L);
                     r.put("requestCount",  safeAttr(on, "requestCount", 0L));
