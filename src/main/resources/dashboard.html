@@ -472,9 +472,10 @@
             <th style="width:55px;text-align:center">우선순위</th>
             <th>대기 / 잠금</th>
             <th>최상위 스택</th>
+            <th style="width:130px">Trace ID</th>
           </tr></thead>
           <tbody id="apm-thread-tbody">
-            <tr><td class="no-data" colspan="6">로딩 중...</td></tr>
+            <tr><td class="no-data" colspan="7">로딩 중...</td></tr>
           </tbody>
         </table>
       </div>
@@ -607,9 +608,10 @@
               <th style="width:55px;text-align:center">우선순위</th>
               <th>대기 / 잠금</th>
               <th>최상위 스택</th>
+              <th style="width:130px">Trace ID</th>
             </tr></thead>
             <tbody id="agent-thread-tbody">
-              <tr><td class="no-data" colspan="6">로딩 중...</td></tr>
+              <tr><td class="no-data" colspan="7">로딩 중...</td></tr>
             </tbody>
           </table>
         </div>
@@ -637,7 +639,7 @@
                 <th style="text-align:right">평균 (ms)</th>
                 <th style="text-align:right">누적 요청</th>
                 <th style="text-align:right">오류</th>
-                <th style="width:100px">Trace ID</th>
+                <th style="width:150px">Trace ID</th>
               </tr></thead>
               <tbody id="agent-requests-tbody">
                 <tr><td class="no-data" colspan="9">Agent 기반 Tomcat JVM 연결 시 표시됩니다</td></tr>
@@ -931,7 +933,7 @@ function renderThreads(scope, tbodyId, pillsId, allThreads, showPrio){
   });
   const tbody=document.getElementById(tbodyId);
   const pills=document.getElementById(pillsId);
-  const cols=showPrio?6:5;
+  const cols=showPrio?7:6;
   const cnt={BLOCKED:0,WAITING:0,TIMED_WAITING:0,RUNNABLE:0,other:0};
   for(const t of allThreads){
     if     (t.state==='BLOCKED')       cnt.BLOCKED++;
@@ -954,21 +956,24 @@ function renderThreads(scope, tbodyId, pillsId, allThreads, showPrio){
     const lock=t.lockOwner?`⛔ ${esc(t.lockOwner)}`:t.lockName?`⏳ ${esc(shortCls(t.lockName))}`:'';
     const cpu=t.cpuMs!=null?Number(t.cpuMs).toLocaleString():'—';
     const frame=esc(t.topFrame||t.stackTrace?.[0]||'');
-    const traceBadge=t.traceId
-      ?`<span class="trace-badge" title="Trace ID: ${esc(t.traceId)}">${esc(t.traceId.slice(0,8))}</span>`:'';
-    const name=esc(t.name)+(t.daemon?' <span style="color:#475569;font-size:0.67rem">[d]</span>':'')+traceBadge;
+    const name=esc(t.name)+(t.daemon?' <span style="color:#475569;font-size:0.67rem">[d]</span>':'');
+    const traceCell=t.traceId
+      ?`<span class="trace-badge" title="클릭하여 컨텍스트 조회&#10;${esc(t.traceId)}" style="cursor:pointer" onclick="event.stopPropagation();openTraceContext('${esc(t.traceId)}')">${esc(t.traceId.slice(0,12))}</span>`
+      :'<span style="color:#293548">—</span>';
     const idAttr=`data-thread-id="${t.id}" data-scope="${scope}"`;
     if(showPrio) return`<tr class="clickable" ${idAttr} onclick="openThreadDetail(this)">
       <td>${badge}</td><td class="tname" title="${esc(t.name)}">${name}</td>
       <td style="text-align:right">${cpu}</td>
       <td style="text-align:center">${t.priority??'—'}</td>
       <td class="mono" title="${lock}">${lock}</td>
-      <td class="mono" title="${frame}">${frame}</td></tr>`;
+      <td class="mono" title="${frame}">${frame}</td>
+      <td>${traceCell}</td></tr>`;
     return`<tr class="clickable" ${idAttr} onclick="openThreadDetail(this)">
       <td>${badge}</td><td class="tname" title="${esc(t.name)}">${name}</td>
       <td style="text-align:right">${cpu}</td>
       <td class="mono" title="${lock}">${lock}</td>
-      <td class="mono" title="${frame}">${frame}</td></tr>`;
+      <td class="mono" title="${frame}">${frame}</td>
+      <td>${traceCell}</td></tr>`;
   }).join('');
 }
 
@@ -1377,7 +1382,7 @@ function renderRequestRows(reqs, tbodyId, histKey){
       ?`<span style="color:#94A3B8">${avgMs.toLocaleString()}</span>`
       :'<span style="color:#334155">—</span>';
     const traceCell=r.traceId
-      ?`<span class="trace-badge" title="클릭하여 요청 컨텍스트 조회 (${esc(r.traceId)})" style="cursor:pointer" onclick="event.stopPropagation();openTraceContext('${esc(r.traceId)}')">${esc(r.traceId.slice(0,8))}</span>`
+      ?`<span class="trace-badge" title="클릭하여 요청 컨텍스트 조회&#10;${esc(r.traceId)}" style="cursor:pointer;letter-spacing:0;font-size:0.62rem" onclick="event.stopPropagation();openTraceContext('${esc(r.traceId)}')">${esc(r.traceId.slice(0,16))}</span>`
       :'<span style="color:#334155">—</span>';
     return`<tr class="clickable" style="${rowStyle}" onclick="openRequestDetail(${idx},'${histKey}')">
       <td class="mono" title="${esc(workerName)}" style="max-width:200px;overflow:hidden;text-overflow:ellipsis">${esc(workerName)}</td>
