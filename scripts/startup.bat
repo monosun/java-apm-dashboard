@@ -49,10 +49,10 @@ if exist "%PID_FILE%" (
     del "%PID_FILE%" >nul 2>&1
 )
 
-:: -- [3] Find JAR (exclude original / agent) -----------------
+:: -- [3] Find JAR (exclude original / agent / integration) ---
 set "JAR="
 for %%f in ("%PROJECT_DIR%\target\java-monitor-*.jar") do (
-    echo %%f | findstr /i "original agent" >nul || set "JAR=%%f"
+    echo %%f | findstr /i "original agent integration" >nul || set "JAR=%%f"
 )
 
 if not defined JAR (

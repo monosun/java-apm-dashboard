@@ -71,10 +71,10 @@ if [[ -f "$PID_FILE" ]]; then
     rm -f "$PID_FILE"
 fi
 
-# ── [4] JAR 탐색 (original / agent 제외) ─────────────────────
+# ── [4] JAR 탐색 (original / agent / integration 제외) ───────
 JAR=""
 for f in "$PROJECT_DIR"/target/java-monitor-*.jar; do
-    [[ "$f" == *original* || "$f" == *agent* ]] && continue
+    [[ "$f" == *original* || "$f" == *agent* || "$f" == *integration* ]] && continue
     JAR="$f"
 done
 
