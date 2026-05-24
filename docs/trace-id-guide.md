@@ -110,7 +110,8 @@ set JAVA_OPTS=%JAVA_OPTS% -javaagent:C:\agent\java-monitor-agent.jar=port=7070
 <filter>
     <filter-name>TraceIdFilter</filter-name>
     <filter-class>com.monosun.monitor.trace.TraceIdFilter</filter-class>
-    <!-- HTML 응답에 trace ID 주입 여부 (기본 true) -->
+    <!-- 비동기 서블릿(startAsync) 사용 시 반드시 true — 없으면 IllegalStateException 발생 -->
+    <async-supported>true</async-supported>
     <init-param>
         <param-name>injectHtml</param-name>
         <param-value>true</param-value>
@@ -150,6 +151,7 @@ public class ApmConfig {
         reg.setFilter(new TraceIdFilter());
         reg.addUrlPatterns("/*");
         reg.addInitParameter("injectHtml", "true");
+        reg.setAsyncSupported(true);  // 비동기 서블릿(startAsync) 사용 시 필수
         reg.setOrder(1);  // 가장 먼저 실행
         return reg;
     }

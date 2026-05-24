@@ -33,9 +33,10 @@ import java.lang.management.ManagementFactory;
  * <filter>
  *   <filter-name>traceIdFilter</filter-name>
  *   <filter-class>com.monosun.monitor.trace.TraceIdFilter</filter-class>
+ *   <async-supported>true</async-supported>  <!-- 비동기 서블릿(startAsync) 사용 시 필수 -->
  *   <init-param>
  *     <param-name>injectHtml</param-name>
- *     <param-value>true</param-value>   <!-- HTML 자동 주입 여부 (기본 true) -->
+ *     <param-value>true</param-value>
  *   </init-param>
  * </filter>
  * <filter-mapping>
@@ -50,6 +51,7 @@ import java.lang.management.ManagementFactory;
  * public FilterRegistrationBean<TraceIdFilter> traceFilter() {
  *     FilterRegistrationBean<TraceIdFilter> bean = new FilterRegistrationBean<>(new TraceIdFilter());
  *     bean.addUrlPatterns("/*");
+ *     bean.setAsyncSupported(true);  // 비동기 서블릿(startAsync) 사용 시 필수
  *     bean.setOrder(Ordered.HIGHEST_PRECEDENCE);
  *     return bean;
  * }
@@ -104,21 +106,51 @@ public class TraceIdFilter implements Filter {
         response.setHeader(RESP_HEADER,    traceId);
         response.setHeader(RESP_HEADER_B3, traceId);
 
-        // 4. Optionally inject into HTML
-        try {
-            String accept = request.getHeader("Accept");
-            boolean wantsHtml = injectHtml
-                && accept != null
-                && (accept.contains("text/html") || accept.contains("application/xhtml"));
-            if (wantsHtml) {
-                HtmlInjectionWrapper wrapped = new HtmlInjectionWrapper(response, traceId);
+        // 4. Optionally inject into HTML (async 요청에는 주입 건너뜀)
+        String accept = request.getHeader("Accept");
+        boolean wantsHtml = injectHtml
+            && accept != null
+            && (accept.contains("text/html") || accept.contains("application/xhtml"));
+
+        if (wantsHtml) {
+            HtmlInjectionWrapper wrapped = new HtmlInjectionWrapper(response, traceId);
+            try {
                 chain.doFilter(request, wrapped);
-                wrapped.finish();
-            } else {
-                chain.doFilter(request, response);
+            } finally {
+                if (request.isAsyncStarted()) {
+                    // async 완료 시점에 주입 및 cleanup
+                    final long asyncTid = tid;
+                    request.getAsyncContext().addListener(new AsyncListener() {
+                        @Override public void onComplete(AsyncEvent e) throws IOException {
+                            wrapped.finish();
+                            jmxDeregister(asyncTid);
+                        }
+                        @Override public void onTimeout(AsyncEvent e)    { jmxDeregister(asyncTid); }
+                        @Override public void onError(AsyncEvent e)      { jmxDeregister(asyncTid); }
+                        @Override public void onStartAsync(AsyncEvent e) {}
+                    });
+                } else {
+                    wrapped.finish();
+                    jmxDeregister(tid);
+                }
             }
-        } finally {
-            jmxDeregister(tid);
+        } else {
+            try {
+                chain.doFilter(request, response);
+            } finally {
+                if (request.isAsyncStarted()) {
+                    // async 완료 시점에 cleanup
+                    final long asyncTid = tid;
+                    request.getAsyncContext().addListener(new AsyncListener() {
+                        @Override public void onComplete(AsyncEvent e)   { jmxDeregister(asyncTid); }
+                        @Override public void onTimeout(AsyncEvent e)    { jmxDeregister(asyncTid); }
+                        @Override public void onError(AsyncEvent e)      { jmxDeregister(asyncTid); }
+                        @Override public void onStartAsync(AsyncEvent e) {}
+                    });
+                } else {
+                    jmxDeregister(tid);
+                }
+            }
         }
     }
 
