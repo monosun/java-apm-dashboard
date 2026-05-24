@@ -1,4 +1,4 @@
-# Java APM Dashboard v1.11.0
+# Java APM Dashboard v1.12.0
 
 Java 프로세스를 위한 **경량 APM(Application Performance Monitor)**.  
 외부 라이브러리 없이 순수 JDK만으로 동작하며, 실시간 대시보드에서 JVM 상태, 스레드 심층 분석, Thread Dump, DB 커넥션 풀, HTTP 요청 처리 현황 (스레드명·개별/평균 처리시간·**Trace ID**), CPU 처리시간 Top 10, HTTP 요청 로그 파일을 제공합니다.
@@ -14,6 +14,7 @@ Java 프로세스를 위한 **경량 APM(Application Performance Monitor)**.
 | **CPU 처리시간 Top 10** | Agent 연결 시 CPU 누적 시간 상위 10 스레드 — 전체 스택 트레이스 인라인 표시 |
 | **HTTP 요청 처리** | Tomcat RequestProcessor — Method·URI·Remote IP·**스레드명**·**개별 처리시간**·**평균 처리시간**·**Trace ID** 표시, 행 클릭 시 스레드 상세·스택 트레이스 모달, 요청 내역 로그파일(`logs/http-requests.log`) 자동 기록 |
 | **Trace ID 연동** | W3C `traceparent`, Datadog, Zipkin B3, AWS X-Ray 등 주요 헤더 자동 추출 — 없으면 128-bit ID 자동 생성. HTML 주입(`<meta>`+`window.__APM_TRACE_ID`) 및 스레드/요청 테이블 배지 표시 |
+| **Trace Context 조회** | HTTP 요청 테이블의 Trace ID 배지 클릭 → 해당 요청의 헤더·파라미터·URI·IP 전체를 모달로 표시 (`RequestContextCaptureFilter` + JMX 브리지) |
 | **DB 커넥션 풀** | HikariCP, Tomcat JDBC, DBCP2 자동 감지 — Active/Idle/Max/대기 스레드 |
 | **Agent Library** | `-javaagent:` 부착으로 HTTP 기반 스레드 모니터링 |
 | **Prometheus** | `/metrics` 엔드포인트 — Prometheus + Grafana 연동 |
@@ -309,7 +310,7 @@ public FilterRegistrationBean<TraceIdFilter> traceFilter() {
 `traceparent` (W3C) → `x-datadog-trace-id` → `x-b3-traceid` (Zipkin) → `x-trace-id` → `x-request-id` → `x-amzn-trace-id` (AWS X-Ray) → 없으면 128-bit 자동 생성
 
 자세한 내용: [`docs/trace-id-guide.md`](docs/trace-id-guide.md)  
-Request 파라미터·헤더 수집: [`docs/trace-id-request-context.md`](docs/trace-id-request-context.md)
+Request 파라미터·헤더 수집 및 대시보드 표시: [`docs/trace-context-setup.md`](docs/trace-context-setup.md)
 
 ---
 
@@ -336,6 +337,7 @@ Request 파라미터·헤더 수집: [`docs/trace-id-request-context.md`](docs/t
 | GET | `/agent/requests` | Agent HTTP 요청 현황 (프록시) |
 | GET | `/agent/dbpools` | Agent DB 커넥션 풀 (프록시) |
 | GET | `/agent/top10` | Agent CPU 처리시간 Top 10 스레드 + 전체 스택 (프록시) |
+| GET | `/agent/trace/{traceId}` | 특정 Trace ID의 요청 컨텍스트 (헤더·파라미터) JSON |
 
 ---
 
@@ -398,7 +400,9 @@ try {
 
 ## 문서
 
+- [**Trace Context 설정 매뉴얼** (헤더·파라미터 대시보드 표시)](docs/trace-context-setup.md)
 - [**Trace ID 연동 가이드** (Tomcat / Spring Boot / Quarkus / WildFly)](docs/trace-id-guide.md)
+- [Request 파라미터·헤더 서버 코드 조회](docs/trace-id-request-context.md)
 - [통합 연동 가이드](docs/integration-guide.md)
 - [설정 레퍼런스](docs/configuration.md)
 - [아키텍처](docs/architecture.md)
@@ -481,6 +485,15 @@ v1.9.0-agent.jar 이상을 사용하면 이 오류가 발생하지 않습니다.
 ---
 
 ## 릴리즈 노트
+
+### v1.12.0
+- **Trace Context 조회** — HTTP 요청 테이블의 Trace ID 배지 클릭 시 헤더·파라미터·URI·IP를 모달로 표시
+  - `TraceRegistry`: `CONTEXT_MAP(traceId → JSON)` 추가, `registerContext`/`getContext`/`deregisterContext` JMX 오퍼레이션 노출
+  - `RequestContextCaptureFilter`: 요청 시 `TraceRegistry.registerContext()` 호출, 완료 후 자동 정리
+  - `AgentHttpServer`: `/agent/trace/{traceId}` 엔드포인트 추가 (JMX getContext 경유)
+  - `MetricsHttpServer`: `/agent/trace/{traceId}` 프록시 엔드포인트 추가
+  - 대시보드: Trace Context 모달 추가, 요청 상세 모달 내 Trace ID 배지도 클릭 가능
+  - 연동 매뉴얼: [`docs/trace-context-setup.md`](docs/trace-context-setup.md)
 
 ### v1.11.0
 - **Remote JMX 모니터링 제거**: `RemoteJvmCollector`, `/remote/*` 엔드포인트, 대시보드 "[2] 모니터링 대상 (JMX)" 섹션 완전 제거
