@@ -3,7 +3,10 @@ package com.monosun.monitor.trace;
 import jakarta.servlet.*;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import javax.management.MBeanServer;
+import javax.management.ObjectName;
 import java.io.IOException;
+import java.lang.management.ManagementFactory;
 
 /**
  * HTTP 요청마다 Trace ID를 생성·전파하는 경량 서블릿 필터.
@@ -54,6 +57,8 @@ import java.io.IOException;
  */
 public class TraceIdFilter implements Filter {
 
+    private static final String TRACE_REGISTRY_MBEAN = "com.monosun.monitor:type=TraceRegistry";
+
     // ── 수신 헤더 (우선순위 순) ────────────────────────────────────────────────
     private static final String[] INCOMING = {
         "traceparent",
@@ -90,10 +95,10 @@ public class TraceIdFilter implements Filter {
         String traceId = extractTraceId(request);
         if (traceId == null) traceId = generate();
 
-        // 2. Store
+        // 2. Store in request attr + JMX registry (agent classloader 와 공유)
         request.setAttribute(REQUEST_ATTR, traceId);
         long tid = Thread.currentThread().getId();
-        TraceRegistry.register(tid, traceId);
+        jmxRegister(tid, traceId);
 
         // 3. Propagate to response headers
         response.setHeader(RESP_HEADER,    traceId);
@@ -113,8 +118,34 @@ public class TraceIdFilter implements Filter {
                 chain.doFilter(request, response);
             }
         } finally {
-            TraceRegistry.deregister(tid);
+            jmxDeregister(tid);
         }
+    }
+
+    // ── JMX registry helpers (에이전트 클래스로더와 직접 의존 없이 통신) ──────────
+
+    private void jmxRegister(long threadId, String traceId) {
+        try {
+            MBeanServer mbs = ManagementFactory.getPlatformMBeanServer();
+            ObjectName on = new ObjectName(TRACE_REGISTRY_MBEAN);
+            if (mbs.isRegistered(on)) {
+                mbs.invoke(on, "registerTrace",
+                    new Object[]{threadId, traceId},
+                    new String[]{"long", "java.lang.String"});
+            }
+        } catch (Exception ignored) {}
+    }
+
+    private void jmxDeregister(long threadId) {
+        try {
+            MBeanServer mbs = ManagementFactory.getPlatformMBeanServer();
+            ObjectName on = new ObjectName(TRACE_REGISTRY_MBEAN);
+            if (mbs.isRegistered(on)) {
+                mbs.invoke(on, "deregisterTrace",
+                    new Object[]{threadId},
+                    new String[]{"long"});
+            }
+        } catch (Exception ignored) {}
     }
 
     // ── helpers ────────────────────────────────────────────────────────────────

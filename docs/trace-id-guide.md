@@ -8,24 +8,39 @@ Java APM Dashboard는 **TraceIdFilter** + **TraceRegistry** 조합으로
 ## 동작 원리
 
 ```
-HTTP 요청
+빌드 산출물
+   ├─ java-monitor-{version}-agent.jar       ← -javaagent: 로 부착 (system classloader)
+   │     TraceRegistry (JMX DynamicMBean)
+   │     AgentHttpServer, AgentThreadCollector, ...
    │
-   ▼
-TraceIdFilter  (webapp 클래스로더)
-   ├─ 요청 헤더에서 traceId 추출 또는 신규 생성
-   ├─ ThreadLocal 등록  ← 애플리케이션 코드에서 MDC.get("traceId")로 참조
-   ├─ TraceRegistry.register(threadId, traceId)  ← JMX MBean (JVM 전역)
-   ├─ response header  X-Trace-Id, X-B3-TraceId 추가
-   └─ HTML 응답에 <meta name="trace-id"> + window.__APM_TRACE_ID 주입
-          │
-          ▼
-AgentHttpServer  (agent 클래스로더)
-   └─ /agent/threads, /agent/requests → TraceRegistry MBean 조회 → traceId 포함 반환
-          │
-          ▼
-Java APM Dashboard
-   └─ HTTP 요청 테이블 · 스레드 목록에 Trace ID 배지 표시
+   └─ java-monitor-{version}-integration.jar ← WEB-INF/lib 에 배치 (webapp classloader)
+         TraceIdFilter, HtmlInjectionWrapper, TraceRegistry
+
+                    ┌──────────────────────┐
+HTTP 요청 ──────▶   │ TraceIdFilter         │  (webapp classloader)
+                    │  ├─ 헤더 추출/신규생성  │
+                    │  ├─ JMX invoke ──────────────▶ TraceRegistry MBean
+                    │  │   registerTrace()   │       (agent classloader,
+                    │  ├─ X-Trace-Id 헤더    │        JVM 전역 MBeanServer)
+                    │  └─ HTML 주입          │              │
+                    └──────────────────────┘              │
+                                                           ▼
+                    ┌──────────────────────┐   AgentThreadCollector
+                    │ AgentHttpServer       │   readLocalTraceRegistry()
+                    │ /agent/requests       │◀──────────────┘
+                    │ /agent/threads        │
+                    └──────────────────────┘
+                              │
+                              ▼
+              Java APM Dashboard — HTTP 요청 테이블 · 스레드 목록에 Trace ID 배지 표시
 ```
+
+> **두 JAR를 분리하는 이유**  
+> `-javaagent:` 로 로드된 JAR는 JVM의 **system classloader**(AppClassLoader)에서 실행됩니다.  
+> system classloader는 `jakarta.servlet.Filter` 에 접근할 수 없으므로,  
+> servlet API 에 의존하는 `TraceIdFilter` / `HtmlInjectionWrapper` 는 별도  
+> **integration JAR** 로 분리하여 webapp classloader(WEB-INF/lib) 에서 로드합니다.  
+> `TraceIdFilter` → `TraceRegistry` 통신은 JVM 전역 MBeanServer 를 통한 JMX invoke 로 처리합니다.
 
 ### 지원하는 트레이스 헤더 (우선순위 순)
 
@@ -42,24 +57,34 @@ Java APM Dashboard
 
 ---
 
-## 1. Agent JAR 준비
-
-빌드된 `java-monitor-{version}-agent.jar` 파일을 대상 서버에 배포합니다.
+## 1. JAR 파일 빌드
 
 ```bash
-# 빌드 (필요한 경우)
 mvn clean package -f /path/to/java-monitor
 
-# 결과물
-target/java-monitor-{version}-agent.jar
+# 생성 파일:
+# target/java-monitor-{version}-agent.jar        ← 대상 JVM 에 -javaagent: 로 부착
+# target/java-monitor-{version}-integration.jar  ← 웹앱 WEB-INF/lib 에 배치
 ```
 
 ---
 
-## 2. TraceIdFilter JAR 준비
+## 2. JAR 배포
 
-`TraceIdFilter`는 **agent JAR 안에 포함**되어 있습니다.  
-웹 애플리케이션의 클래스패스에 agent JAR를 추가합니다.
+두 JAR를 대상 서버에 복사합니다.
+
+```
+/opt/agent/
+  java-monitor-{version}-agent.jar        ← JVM 시작 옵션에 경로 지정
+  java-monitor-{version}-integration.jar  ← 각 웹앱의 WEB-INF/lib/ 에 복사
+```
+
+> **agent JAR vs integration JAR 역할 요약**
+>
+> | JAR | 포함 클래스 | 로드 위치 |
+> |---|---|---|
+> | `agent.jar` | `TraceRegistry`, `AgentThreadCollector`, `AgentHttpServer`, ... | `-javaagent:` → system classloader |
+> | `integration.jar` | `TraceIdFilter`, `HtmlInjectionWrapper`, `TraceRegistry` | `WEB-INF/lib` → webapp classloader |
 
 ---
 
@@ -306,9 +331,11 @@ window.__APM_TRACE_ID  // "3a7f2b1e0d4c5a69a8b7c6d5e4f30211"
 
 | 항목 | 내용 |
 |---|---|
-| 클래스패스 | agent JAR를 webapp의 `WEB-INF/lib` 또는 서버 `lib` 디렉토리에 배치 |
-| 내장 Tomcat | `-javaagent` 없이도 `TraceIdFilter` 단독 사용 가능 (대시보드 연동은 agent 필요) |
+| **JAR 분리 필수** | `TraceIdFilter`가 포함된 **integration JAR** 를 `WEB-INF/lib` 에 배치. agent JAR 를 WEB-INF/lib 에 넣으면 안 됨 — system classloader 와 webapp classloader 간 클래스 중복 충돌 발생 |
+| **agent JAR 에 servlet API 없음** | `-javaagent:` 로 로드되는 agent JAR 는 `jakarta.servlet.Filter` 에 접근 불가. integration JAR 로 분리한 이유 |
+| 내장 Tomcat (Spring Boot) | `-javaagent` 없이 integration JAR 만 추가해도 `TraceIdFilter` 단독 사용 가능. 대시보드와 traceId 연동은 agent 필요 |
 | HTML 주입 성능 | 응답을 전체 버퍼링하므로 매우 큰 HTML (수 MB)은 `injectHtml=false` 권장 |
-| 비 HTML 응답 | `Content-Type`이 `text/html`이 아닌 경우 자동으로 주입 건너뜀 |
-| 멀티 컨텍스트 | 동일 JVM에 여러 webapp 배포 시 `TraceRegistry` MBean은 JVM 전역 단 1개 등록 |
+| 비 HTML 응답 | `Accept` 헤더에 `text/html` 이 없으면 HTML 주입 건너뜀 |
+| 멀티 컨텍스트 | 동일 JVM에 여러 webapp 배포 시 `TraceRegistry` MBean은 JVM 전역 단 1개 등록. 모든 webapp 의 traceId 를 하나의 registry 에서 관리 |
 | Java 버전 | Java 11 이상 필요 (Java 21 권장) |
+| Tomcat 버전 | Tomcat 10.x (Jakarta EE 9+) 이상. Tomcat 9.x 는 `javax.servlet` 패키지 사용 — 별도 빌드 필요 |

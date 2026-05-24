@@ -81,8 +81,8 @@
                                 <include>com/monosun/monitor/agent/**</include>
                                 <include>com/monosun/monitor/core/RequestLogger*.class</include>
                                 <include>com/monosun/monitor/trace/TraceRegistry*.class</include>
-                                <include>com/monosun/monitor/trace/TraceIdFilter*.class</include>
-                                <include>com/monosun/monitor/trace/HtmlInjectionWrapper*.class</include>
+                                <!-- TraceIdFilter / HtmlInjectionWrapper 는 integration JAR 에만 포함 -->
+                                <!-- servlet API 에 의존하므로 system classloader 로 로드되는 agent JAR 에 넣지 않음 -->
                             </includes>
                             <archive>
                                 <manifestEntries>
@@ -92,6 +92,21 @@
                                     <Can-Retransform-Classes>false</Can-Retransform-Classes>
                                 </manifestEntries>
                             </archive>
+                        </configuration>
+                    </execution>
+
+                    <!-- Integration JAR: 웹앱 WEB-INF/lib 에 배치하는 경량 라이브러리 -->
+                    <!-- TraceIdFilter + HtmlInjectionWrapper + TraceRegistry 포함 -->
+                    <!-- servlet API 는 provided — Tomcat/컨테이너가 제공 -->
+                    <execution>
+                        <id>integration-jar</id>
+                        <phase>package</phase>
+                        <goals><goal>jar</goal></goals>
+                        <configuration>
+                            <classifier>integration</classifier>
+                            <includes>
+                                <include>com/monosun/monitor/trace/**</include>
+                            </includes>
                         </configuration>
                     </execution>
                 </executions>

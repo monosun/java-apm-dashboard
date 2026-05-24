@@ -72,7 +72,22 @@ public final class TraceRegistry implements DynamicMBean {
 
     @Override public void setAttribute(Attribute a) {}
     @Override public AttributeList setAttributes(AttributeList a) { return new AttributeList(); }
-    @Override public Object invoke(String op, Object[] p, String[] s) { return null; }
+
+    @Override
+    public Object invoke(String actionName, Object[] params, String[] signature) {
+        switch (actionName) {
+            case "registerTrace":
+                if (params != null && params.length == 2)
+                    register((Long) params[0], (String) params[1]);
+                return null;
+            case "deregisterTrace":
+                if (params != null && params.length == 1)
+                    deregister((Long) params[0]);
+                return null;
+            default:
+                return null;
+        }
+    }
 
     @Override
     public AttributeList getAttributes(String[] names) {
@@ -88,7 +103,20 @@ public final class TraceRegistry implements DynamicMBean {
                 new MBeanAttributeInfo("ActiveTraces", "java.lang.String",
                     "JSON map {threadId: traceId} for currently active requests",
                     true, false, false)
-            }, null, null, null);
+            },
+            null,
+            new MBeanOperationInfo[]{
+                new MBeanOperationInfo("registerTrace", "Register a trace ID for a thread",
+                    new MBeanParameterInfo[]{
+                        new MBeanParameterInfo("threadId", "long", "Thread ID"),
+                        new MBeanParameterInfo("traceId", "java.lang.String", "Trace ID")
+                    }, "void", MBeanOperationInfo.ACTION),
+                new MBeanOperationInfo("deregisterTrace", "Remove trace ID for a thread",
+                    new MBeanParameterInfo[]{
+                        new MBeanParameterInfo("threadId", "long", "Thread ID")
+                    }, "void", MBeanOperationInfo.ACTION)
+            },
+            null);
     }
 
     private TraceRegistry() {}
