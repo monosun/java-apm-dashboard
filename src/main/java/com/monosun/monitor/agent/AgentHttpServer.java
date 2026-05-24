@@ -123,7 +123,7 @@ public class AgentHttpServer {
         String jvmVersion = esc(rt.getVmVersion());
         long   pid        = ProcessHandle.current().pid();
         long   uptimeMs   = System.currentTimeMillis() - startTimeMs;
-        return "{\"agentVersion\":\"1.6.0\""
+        return "{\"agentVersion\":\"1.9.0\""
             + ",\"startTime\":\"" + Instant.ofEpochMilli(startTimeMs) + "\""
             + ",\"uptimeMs\":" + uptimeMs
             + ",\"jvmName\":\"" + jvmName + "\""
@@ -164,33 +164,42 @@ public class AgentHttpServer {
         }
         double heapPct = heap.getMax() > 0 ? (double) heap.getUsed() / heap.getMax() * 100.0 : 0.0;
 
-        double cpuLoad = -1.0;
+        double cpuLoad   = -1.0;
+        double cpuSystem = -1.0;
+        long   osTotalMb = -1L;
+        long   osFreeMb  = -1L;
         try {
             com.sun.management.OperatingSystemMXBean osMX =
                 (com.sun.management.OperatingSystemMXBean) ManagementFactory.getOperatingSystemMXBean();
-            cpuLoad = osMX.getProcessCpuLoad();
+            cpuLoad   = osMX.getProcessCpuLoad();
+            cpuSystem = osMX.getCpuLoad();
+            osTotalMb = osMX.getTotalMemorySize()  / 1_048_576L;
+            osFreeMb  = osMX.getFreeMemorySize()   / 1_048_576L;
         } catch (ClassCastException ignored) {}
 
         return "{\n"
-            + "  \"heap.used.mb\":"        + heap.getUsed()      / 1_048_576L + ",\n"
-            + "  \"heap.max.mb\":"         + heap.getMax()       / 1_048_576L + ",\n"
-            + "  \"heap.committed.mb\":"   + heap.getCommitted() / 1_048_576L + ",\n"
-            + "  \"heap.usage.percent\":\"" + String.format("%.1f%%", heapPct) + "\",\n"
-            + "  \"nonheap.used.mb\":"     + nonHeap.getUsed()   / 1_048_576L + ",\n"
-            + "  \"metaspace.used.mb\":"   + metaspace                        + ",\n"
-            + "  \"gc.total.count\":"      + gcCount                          + ",\n"
-            + "  \"gc.total.time.ms\":"    + gcTime                           + ",\n"
-            + "  \"thread.count\":"        + thrMX.getThreadCount()           + ",\n"
-            + "  \"thread.daemon\":"       + thrMX.getDaemonThreadCount()     + ",\n"
-            + "  \"thread.peak\":"         + thrMX.getPeakThreadCount()       + ",\n"
-            + "  \"thread.blocked\":"      + blocked                          + ",\n"
-            + "  \"thread.waiting\":"      + waiting                          + ",\n"
-            + "  \"thread.timed_waiting\":" + timed                           + ",\n"
-            + "  \"thread.runnable\":"     + runnable                         + ",\n"
-            + "  \"cpu.process\":\""       + String.format("%.1f%%", Math.max(0, cpuLoad * 100)) + "\",\n"
-            + "  \"uptime.ms\":"           + rtMX.getUptime()                 + ",\n"
-            + "  \"jvm.name\":\""          + esc(rtMX.getVmName())            + "\",\n"
-            + "  \"jvm.version\":\""       + esc(rtMX.getVmVersion())         + "\"\n"
+            + "  \"heap.used.mb\":"          + heap.getUsed()      / 1_048_576L + ",\n"
+            + "  \"heap.max.mb\":"           + heap.getMax()       / 1_048_576L + ",\n"
+            + "  \"heap.committed.mb\":"     + heap.getCommitted() / 1_048_576L + ",\n"
+            + "  \"heap.usage.percent\":\""  + String.format("%.1f%%", heapPct) + "\",\n"
+            + "  \"nonheap.used.mb\":"       + nonHeap.getUsed()   / 1_048_576L + ",\n"
+            + "  \"metaspace.used.mb\":"     + metaspace                        + ",\n"
+            + "  \"gc.total.count\":"        + gcCount                          + ",\n"
+            + "  \"gc.total.time.ms\":"      + gcTime                           + ",\n"
+            + "  \"thread.count\":"          + thrMX.getThreadCount()           + ",\n"
+            + "  \"thread.daemon\":"         + thrMX.getDaemonThreadCount()     + ",\n"
+            + "  \"thread.peak\":"           + thrMX.getPeakThreadCount()       + ",\n"
+            + "  \"thread.blocked\":"        + blocked                          + ",\n"
+            + "  \"thread.waiting\":"        + waiting                          + ",\n"
+            + "  \"thread.timed_waiting\":"  + timed                            + ",\n"
+            + "  \"thread.runnable\":"       + runnable                         + ",\n"
+            + "  \"cpu.process\":\""         + String.format("%.1f%%", Math.max(0, cpuLoad   * 100)) + "\",\n"
+            + "  \"cpu.system\":\""          + String.format("%.1f%%", Math.max(0, cpuSystem * 100)) + "\",\n"
+            + "  \"os.total.memory.mb\":"    + osTotalMb                        + ",\n"
+            + "  \"os.free.memory.mb\":"     + osFreeMb                         + ",\n"
+            + "  \"uptime.ms\":"             + rtMX.getUptime()                 + ",\n"
+            + "  \"jvm.name\":\""            + esc(rtMX.getVmName())            + "\",\n"
+            + "  \"jvm.version\":\""         + esc(rtMX.getVmVersion())         + "\"\n"
             + "}";
     }
 

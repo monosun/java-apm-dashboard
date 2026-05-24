@@ -257,6 +257,13 @@
     .refresh-sel { padding:3px 8px; border-radius:5px; border:1px solid #293548;
                    background:#0F172A; color:#CBD5E1; font-size:0.72rem; cursor:pointer; }
     .refresh-sel:focus { outline:none; border-color:#3B82F6; }
+
+    /* ── Section collapse toggle ─────────────────────────────────────────────── */
+    .section-toggle { background:#0F172A; border:1px solid #293548; color:#64748B;
+                      font-size:0.69rem; font-weight:600; padding:2px 9px; border-radius:4px;
+                      cursor:pointer; white-space:nowrap; transition:all .15s; margin-left:auto; }
+    .section-toggle:hover { background:#1E293B; color:#CBD5E1; }
+    .sect-collapsed > *:not(.section-hd) { display:none !important; }
   </style>
 </head>
 <body>
@@ -332,10 +339,11 @@
 <div class="page">
 
   <!-- ══════════════════ [1] APM 에이전트 상태 ══════════════════ -->
-  <div style="margin-bottom:32px">
+  <div style="margin-bottom:32px" id="apm-section">
     <div class="section-hd">
       <h2>APM 에이전트 상태</h2>
       <span class="section-badge badge-agent">모니터링 에이전트</span>
+      <button class="section-toggle" id="apm-toggle-btn" onclick="toggleSection('apm-section','apm-toggle-btn')">▼ 숨기기</button>
     </div>
 
     <div id="deadlock-alert" class="alert-bar">
@@ -461,10 +469,11 @@
   </div>
 
   <!-- ══════════════════ [2] 모니터링 대상 (JMX) ══════════════════ -->
-  <div style="margin-bottom:32px">
+  <div style="margin-bottom:32px" id="jmx-section">
     <div class="section-hd">
       <h2>모니터링 대상 (JMX)</h2>
       <span class="section-badge" id="targets-badge">로딩 중...</span>
+      <button class="section-toggle" id="jmx-toggle-btn" onclick="toggleSection('jmx-section','jmx-toggle-btn')">▼ 숨기기</button>
     </div>
 
     <div id="target-connected" style="display:none">
@@ -629,6 +638,7 @@
     <div class="section-hd">
       <h2>Agent 연결 대상</h2>
       <span class="section-badge" id="agent-badge">로딩 중...</span>
+      <button class="section-toggle" id="agent-toggle-btn" onclick="toggleSection('agent-section','agent-toggle-btn')">▼ 숨기기</button>
     </div>
 
     <div id="agent-connected" style="display:none">
@@ -646,9 +656,9 @@
             <div class="card-sub"  id="ag-heap-mb">—</div>
           </div>
           <div class="card hi-orange">
-            <div class="card-label">CPU</div>
+            <div class="card-label">CPU (프로세스)</div>
             <div class="card-value" id="ag-cpu">—</div>
-            <div class="card-sub">프로세스</div>
+            <div class="card-sub"  id="ag-cpu-sys">시스템: —</div>
           </div>
           <div class="card hi-green">
             <div class="card-label">스레드</div>
@@ -665,6 +675,11 @@
             <div class="card-value" id="ag-waiting">0</div>
             <div class="card-sub">스레드</div>
           </div>
+          <div class="card hi-purple">
+            <div class="card-label">TIMED_WAIT</div>
+            <div class="card-value" id="ag-timed">0</div>
+            <div class="card-sub">스레드</div>
+          </div>
           <div class="card">
             <div class="card-label">GC 횟수</div>
             <div class="card-value" id="ag-gc">—</div>
@@ -676,9 +691,26 @@
             <div class="card-sub">MB</div>
           </div>
           <div class="card">
+            <div class="card-label">OS 여유 메모리</div>
+            <div class="card-value" id="ag-os-free">—</div>
+            <div class="card-sub"  id="ag-os-total">전체: —</div>
+          </div>
+          <div class="card">
             <div class="card-label">업타임</div>
             <div class="card-value" id="ag-uptime">—</div>
             <div class="card-sub"  id="ag-jvm">—</div>
+          </div>
+        </div>
+
+        <!-- Agent Charts (Heap / CPU 추이) -->
+        <div class="charts-row charts-2" style="margin-bottom:14px">
+          <div class="chart-box">
+            <div class="chart-title">Heap 추이 (%)</div>
+            <div class="chart-wrap h160"><canvas id="agHeapChart"></canvas></div>
+          </div>
+          <div class="chart-box">
+            <div class="chart-title">CPU 추이 (%)</div>
+            <div class="chart-wrap h160"><canvas id="agCpuChart"></canvas></div>
           </div>
         </div>
 
@@ -696,7 +728,16 @@
             <input class="thread-search" type="text" placeholder="스레드 이름 검색..." oninput="setSearch('agent',this.value)">
             <div class="pills" id="agent-thread-pills"></div>
           </div>
-          <div style="display:flex;gap:6px;align-items:center">
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+            <select id="agent-refresh-sel" class="refresh-sel"
+                    onchange="setAgentRefreshInterval(+this.value)" title="자동 갱신 주기">
+              <option value="1">1초</option>
+              <option value="3">3초</option>
+              <option value="5" selected>5초</option>
+              <option value="10">10초</option>
+              <option value="30">30초</option>
+            </select>
+            <button class="btn btn-sm" onclick="triggerAgentRefresh()" title="지금 갱신">⟳ 지금 갱신</button>
             <button class="btn btn-sm" onclick="openDump('agent')">Thread Dump</button>
           </div>
         </div>
@@ -792,6 +833,7 @@
     <div class="section-hd">
       <h2>DB Connection Pool</h2>
       <span class="section-badge" id="dbpool-badge">로딩 중...</span>
+      <button class="section-toggle" id="dbpool-toggle-btn" onclick="toggleSection('dbpool-section','dbpool-toggle-btn')">▼ 숨기기</button>
     </div>
     <div id="dbpool-content">
       <div class="chart-box">
@@ -823,6 +865,7 @@ const HIST = 60;
 const labels = [];
 const hHeap=[], hCpu=[], hGc=[], hRunnable=[], hBlocked=[], hWaiting=[], hTimed=[];
 const tHeapH=[], tCpuH=[];
+const agHeapH=[], agCpuH=[];
 
 let remoteConnected = false;
 let agentConnected  = false;
@@ -872,8 +915,10 @@ const gcChart    = mkChart('gcChart',    [ds('GC 횟수','#8B5CF6',true)]);
 const tsChart    = mkChart('threadStateChart',[
   ds('RUNNABLE','#4ADE80',false), ds('TIMED_WAIT','#A78BFA',false),
   ds('WAITING','#FCD34D',false),  ds('BLOCKED','#F87171',false)]);
-const tHeapChart = mkChart('tHeapChart', [ds('Heap %','#38BDF8',true)]);
-const tCpuChart  = mkChart('tCpuChart',  [ds('CPU %', '#FB923C',true)]);
+const tHeapChart  = mkChart('tHeapChart',  [ds('Heap %','#38BDF8',true)]);
+const tCpuChart   = mkChart('tCpuChart',   [ds('CPU %', '#FB923C',true)]);
+const agHeapChart = mkChart('agHeapChart', [ds('Heap %','#818CF8',true)]);
+const agCpuChart  = mkChart('agCpuChart',  [ds('CPU %', '#34D399',true)]);
 
 
 function updateChart(chart,arr){
@@ -1019,21 +1064,38 @@ async function refreshAgent(){
     agConn.style.display=''; agPH.style.display='none';
     badge.className='section-badge badge-purple'; badge.textContent='연결됨 — '+status.target;
     agentConnected=true;
+
     const ajvm=await fetch('/agent/jvm').then(r=>r.json());
+
+    // 카드 업데이트
     document.getElementById('ag-heap-pct').textContent=ajvm['heap.usage.percent']??'—';
     document.getElementById('ag-heap-mb').textContent=`${ajvm['heap.used.mb']??'—'}/${ajvm['heap.max.mb']??'—'} MB`;
     document.getElementById('ag-cpu').textContent=ajvm['cpu.process']??'—';
+    document.getElementById('ag-cpu-sys').textContent=`시스템: ${ajvm['cpu.system']??'—'}`;
     document.getElementById('ag-threads').textContent=ajvm['thread.count']??'—';
     document.getElementById('ag-threads-sub').textContent=`데몬: ${ajvm['thread.daemon']??'—'} / 피크: ${ajvm['thread.peak']??'—'}`;
     const abl=Number(ajvm['thread.blocked']||0);
     document.getElementById('ag-blocked').textContent=abl;
     document.getElementById('ag-blocked').className='card-value'+(abl>0?' warn':'');
     document.getElementById('ag-waiting').textContent=ajvm['thread.waiting']??0;
+    document.getElementById('ag-timed').textContent=ajvm['thread.timed_waiting']??0;
     document.getElementById('ag-gc').textContent=ajvm['gc.total.count']??'—';
     document.getElementById('ag-gc-t').textContent=`소요: ${ajvm['gc.total.time.ms']??'—'} ms`;
     document.getElementById('ag-meta').textContent=ajvm['metaspace.used.mb']??'—';
+    document.getElementById('ag-os-free').textContent=mbToGb(ajvm['os.free.memory.mb']);
+    document.getElementById('ag-os-total').textContent=`전체: ${mbToGb(ajvm['os.total.memory.mb'])}`;
     document.getElementById('ag-uptime').textContent=fmtUp(Number(ajvm['uptime.ms']));
     document.getElementById('ag-jvm').textContent=ajvm['jvm.name']||'—';
+
+    // 차트 업데이트
+    const agH=parseFloat(ajvm['heap.usage.percent']);
+    const agC=parseFloat(ajvm['cpu.process']);
+    pushH(agHeapH, isNaN(agH)?null:+agH.toFixed(1));
+    pushH(agCpuH,  isNaN(agC)?null:+agC.toFixed(1));
+    agHeapChart.data.labels=[...labels]; agHeapChart.data.datasets[0].data=[...agHeapH]; agHeapChart.update('none');
+    agCpuChart.data.labels=[...labels];  agCpuChart.data.datasets[0].data=[...agCpuH];  agCpuChart.update('none');
+
+    // 스레드 테이블 + Live Stack
     const agThreads=await fetch('/agent/threads').then(r=>r.json());
     threadData.agent=agThreads;
     renderThreads('agent','agent-thread-tbody','agent-thread-pills',agThreads,true);
@@ -1636,7 +1698,62 @@ async function triggerRemoteRefresh() {
   scheduleRemoteTimer();
 }
 
+// ── Agent 섹션 타이머 (간격 조절 가능) ────────────────────────────────────────
+let agentIntervalMs = 5000;
+let agentTimerHandle = null;
+
+function scheduleAgentTimer() {
+  if (agentTimerHandle) clearTimeout(agentTimerHandle);
+  agentTimerHandle = setTimeout(async () => {
+    await refreshAgent();
+    await refreshAgentTop10();
+    scheduleAgentTimer();
+  }, agentIntervalMs);
+}
+
+function setAgentRefreshInterval(sec) {
+  agentIntervalMs = sec * 1000;
+  scheduleAgentTimer();
+}
+
+async function triggerAgentRefresh() {
+  if (agentTimerHandle) clearTimeout(agentTimerHandle);
+  await Promise.all([refreshAgent(), refreshAgentTop10(), refreshRequests()]);
+  scheduleAgentTimer();
+}
+
+// ── 섹션 접기 / 펼치기 ──────────────────────────────────────────────────���─────
+function toggleSection(sectionId, btnId) {
+  const sec = document.getElementById(sectionId);
+  const btn = document.getElementById(btnId);
+  const collapsed = sec.classList.toggle('sect-collapsed');
+  btn.textContent = collapsed ? '▶ 펼치기' : '▼ 숨기기';
+  try {
+    const s = JSON.parse(localStorage.getItem('sect-states') || '{}');
+    s[sectionId] = collapsed;
+    localStorage.setItem('sect-states', JSON.stringify(s));
+  } catch(_) {}
+}
+
+function restoreSectionVisibility() {
+  try {
+    const s = JSON.parse(localStorage.getItem('sect-states') || '{}');
+    for (const [id, collapsed] of Object.entries(s)) {
+      if (!collapsed) continue;
+      const sec = document.getElementById(id);
+      const btn = document.getElementById(id.replace('-section', '-toggle-btn').replace('apm-section', 'apm-section').replace('jmx-section','jmx-section'));
+      // map section id → btn id
+      const btnMap = {'apm-section':'apm-toggle-btn','jmx-section':'jmx-toggle-btn',
+                      'agent-section':'agent-toggle-btn','dbpool-section':'dbpool-toggle-btn'};
+      const btnEl = document.getElementById(btnMap[id]);
+      if (sec)   sec.classList.add('sect-collapsed');
+      if (btnEl) btnEl.textContent = '▶ 펼치기';
+    }
+  } catch(_) {}
+}
+
 // ── Polling ───────────────────────────────────────────────────────────────────
+restoreSectionVisibility();
 refresh();
 refreshApmThreads();
 refreshRemote();
@@ -1646,9 +1763,8 @@ refreshDbPools();
 refreshRequests();
 setInterval(refresh,           3000);
 setInterval(refreshApmThreads, 5000);
-scheduleRemoteTimer();                 // Remote: 사용자 설정 간격으로 타이머 관리
-setInterval(refreshAgent,      5000);
-setInterval(refreshAgentTop10, 5000);
+scheduleRemoteTimer();   // Remote: 사용자 설정 간격으로 타이머 관리
+scheduleAgentTimer();    // Agent:  사용자 설정 간격으로 타이머 관리
 setInterval(refreshDbPools,    8000);
 setInterval(refreshRequests,   3000);
 </script>
