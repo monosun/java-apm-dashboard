@@ -766,30 +766,6 @@
           <div class="dump-panel-body" id="agent-live-body"></div>
         </div>
 
-        <!-- CPU 처리시간 Top 10 -->
-        <div class="chart-box" style="margin-top:16px">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-            <span class="chart-title" style="margin:0">CPU 처리시간 Top 10</span>
-            <span style="font-size:0.72rem;color:#64748B">스레드 누적 CPU 시간 기준 &nbsp;•&nbsp; 행 클릭 시 전체 스택 펼치기</span>
-          </div>
-          <div class="table-wrap">
-            <table>
-              <thead><tr>
-                <th style="width:32px;text-align:center">#</th>
-                <th style="width:110px">상태</th>
-                <th>스레드 이름</th>
-                <th style="width:110px;text-align:right">CPU (ms)</th>
-                <th style="width:110px;text-align:right">User (ms)</th>
-                <th style="width:80px;text-align:right">Blocked 횟수</th>
-                <th>최상위 스택</th>
-              </tr></thead>
-              <tbody id="agent-top10-tbody">
-                <tr><td class="no-data" colspan="7">로딩 중...</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-
         <!-- HTTP 요청 처리 현황 (Agent RequestProcessor) -->
         <div class="chart-box" style="margin-top:14px">
           <div class="thread-toolbar" style="margin-bottom:8px">
@@ -807,6 +783,52 @@
               </tr></thead>
               <tbody id="agent-requests-tbody">
                 <tr><td class="no-data" colspan="8">Agent 기반 Tomcat JVM 연결 시 표시됩니다</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- CPU 처리시간 Top 10 -->
+        <div class="chart-box" style="margin-top:14px">
+          <div class="thread-toolbar" style="margin-bottom:8px">
+            <div class="thread-toolbar-left">
+              <span class="chart-title" style="margin:0">CPU 처리시간 Top 10</span>
+              <div class="filter-btns" id="top10-filter-btns">
+                <button class="fbtn fbtn-all active"  onclick="setTop10Filter('ALL',this)">ALL</button>
+                <button class="fbtn fbtn-blocked"     onclick="setTop10Filter('BLOCKED',this)">BLOCKED</button>
+                <button class="fbtn fbtn-waiting"     onclick="setTop10Filter('WAITING',this)">WAITING</button>
+                <button class="fbtn fbtn-timed"       onclick="setTop10Filter('TIMED_WAITING',this)">TIMED</button>
+                <button class="fbtn fbtn-runnable"    onclick="setTop10Filter('RUNNABLE',this)">RUNNABLE</button>
+              </div>
+              <input class="thread-search" type="text" placeholder="스레드 이름 검색..."
+                     oninput="setTop10Search(this.value)">
+            </div>
+            <div style="display:flex;gap:6px;align-items:center">
+              <span style="font-size:0.72rem;color:#64748B">누적 CPU 기준</span>
+              <select id="top10-refresh-sel" class="refresh-sel"
+                      onchange="setTop10RefreshInterval(+this.value)" title="자동 갱신 주기">
+                <option value="1">1초</option>
+                <option value="3">3초</option>
+                <option value="5" selected>5초</option>
+                <option value="10">10초</option>
+                <option value="30">30초</option>
+              </select>
+              <button class="btn btn-sm" onclick="triggerTop10Refresh()" title="지금 갱신">⟳ 지금 갱신</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr>
+                <th style="width:32px;text-align:center">#</th>
+                <th style="width:110px">상태</th>
+                <th>스레드 이름</th>
+                <th style="width:110px;text-align:right">CPU (ms)</th>
+                <th style="width:110px;text-align:right">User (ms)</th>
+                <th style="width:80px;text-align:right">Blocked 횟수</th>
+                <th>최상위 스택</th>
+              </tr></thead>
+              <tbody id="agent-top10-tbody">
+                <tr><td class="no-data" colspan="7">로딩 중...</td></tr>
               </tbody>
             </table>
           </div>
@@ -1426,37 +1448,63 @@ async function refreshDbPools(){
 }
 
 // ── Agent CPU 처리시간 Top 10 ────────────────────────────────────────────────
-async function refreshAgentTop10(){
-  if(!agentConnected) return;
-  try{
-    const threads=await fetch('/agent/top10').then(r=>r.json());
-    const tbody=document.getElementById('agent-top10-tbody');
-    if(!threads||threads.length===0){
-      tbody.innerHTML='<tr><td class="no-data" colspan="7">데이터 없음 (Agent 미연결 또는 스레드 없음)</td></tr>';
-      return;
-    }
-    tbody.innerHTML=threads.map((t,i)=>{
-      const badge=stateBadge(t.state);
-      const frame=esc(t.stackTrace?.[0]||'(스택 없음)');
-      const detId=`top10d${i}`;
-      const cpu=t.cpuMs!=null?Number(t.cpuMs).toLocaleString():'—';
-      const user=t.userMs!=null?Number(t.userMs).toLocaleString():'—';
-      const blk=t.blockedCount!=null?Number(t.blockedCount).toLocaleString():'—';
-      const name=esc(t.name)+(t.daemon?' <span style="color:#475569;font-size:0.67rem">[d]</span>':'');
-      return`<tr class="clickable" onclick="toggleTop10Detail('${detId}')">
-        <td style="text-align:center;color:#64748B;font-size:0.75rem;font-weight:600">${i+1}</td>
-        <td>${badge}</td>
-        <td class="tname" title="${esc(t.name)}">${name}</td>
-        <td style="text-align:right;color:#38BDF8;font-weight:600">${cpu}</td>
-        <td style="text-align:right">${user}</td>
-        <td style="text-align:right">${blk}</td>
-        <td class="mono" title="${frame}" style="max-width:260px;overflow:hidden;text-overflow:ellipsis">${frame}</td>
-      </tr>
-      <tr id="${detId}" style="display:none">
-        <td colspan="7" style="padding:0">${buildTop10Detail(t)}</td>
-      </tr>`;
-    }).join('');
-  }catch(_){}
+let top10Cache   = [];
+let top10Filter  = 'ALL';
+let top10Search  = '';
+
+function setTop10Filter(state, btn) {
+  top10Filter = state;
+  document.querySelectorAll('#top10-filter-btns .fbtn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderTop10();
+}
+
+function setTop10Search(val) {
+  top10Search = val.trim().toLowerCase();
+  renderTop10();
+}
+
+function renderTop10() {
+  const tbody = document.getElementById('agent-top10-tbody');
+  if (!tbody) return;
+  let list = top10Cache;
+  if (top10Filter !== 'ALL') list = list.filter(t => t.state === top10Filter);
+  if (top10Search) list = list.filter(t => (t.name||'').toLowerCase().includes(top10Search));
+  if (!list.length) {
+    tbody.innerHTML = '<tr><td class="no-data" colspan="7">'
+      + (top10Cache.length === 0 ? '데이터 없음 (Agent 미연결 또는 스레드 없음)' : '해당 조건의 스레드가 없습니다')
+      + '</td></tr>';
+    return;
+  }
+  tbody.innerHTML = list.map((t, i) => {
+    const badge  = stateBadge(t.state);
+    const frame  = esc(t.stackTrace?.[0] || '(스택 없음)');
+    const detId  = `top10d${i}`;
+    const cpu    = t.cpuMs    != null ? Number(t.cpuMs).toLocaleString()    : '—';
+    const user   = t.userMs   != null ? Number(t.userMs).toLocaleString()   : '—';
+    const blk    = t.blockedCount != null ? Number(t.blockedCount).toLocaleString() : '—';
+    const name   = esc(t.name) + (t.daemon ? ' <span style="color:#475569;font-size:0.67rem">[d]</span>' : '');
+    return `<tr class="clickable" onclick="toggleTop10Detail('${detId}')">
+      <td style="text-align:center;color:#64748B;font-size:0.75rem;font-weight:600">${i+1}</td>
+      <td>${badge}</td>
+      <td class="tname" title="${esc(t.name)}">${name}</td>
+      <td style="text-align:right;color:#38BDF8;font-weight:600">${cpu}</td>
+      <td style="text-align:right">${user}</td>
+      <td style="text-align:right">${blk}</td>
+      <td class="mono" title="${frame}" style="max-width:260px;overflow:hidden;text-overflow:ellipsis">${frame}</td>
+    </tr>
+    <tr id="${detId}" style="display:none">
+      <td colspan="7" style="padding:0">${buildTop10Detail(t)}</td>
+    </tr>`;
+  }).join('');
+}
+
+async function refreshAgentTop10() {
+  if (!agentConnected) return;
+  try {
+    top10Cache = await fetch('/agent/top10').then(r => r.json()) || [];
+    renderTop10();
+  } catch(_) {}
 }
 
 function toggleTop10Detail(id){
@@ -1706,7 +1754,6 @@ function scheduleAgentTimer() {
   if (agentTimerHandle) clearTimeout(agentTimerHandle);
   agentTimerHandle = setTimeout(async () => {
     await refreshAgent();
-    await refreshAgentTop10();
     scheduleAgentTimer();
   }, agentIntervalMs);
 }
@@ -1718,8 +1765,31 @@ function setAgentRefreshInterval(sec) {
 
 async function triggerAgentRefresh() {
   if (agentTimerHandle) clearTimeout(agentTimerHandle);
-  await Promise.all([refreshAgent(), refreshAgentTop10(), refreshRequests()]);
+  await Promise.all([refreshAgent(), refreshRequests()]);
   scheduleAgentTimer();
+}
+
+// ── CPU Top 10 타이머 (독립 간격 조절 가능) ───────────────────────────────────
+let top10IntervalMs  = 5000;
+let top10TimerHandle = null;
+
+function scheduleTop10Timer() {
+  if (top10TimerHandle) clearTimeout(top10TimerHandle);
+  top10TimerHandle = setTimeout(async () => {
+    await refreshAgentTop10();
+    scheduleTop10Timer();
+  }, top10IntervalMs);
+}
+
+function setTop10RefreshInterval(sec) {
+  top10IntervalMs = sec * 1000;
+  scheduleTop10Timer();
+}
+
+async function triggerTop10Refresh() {
+  if (top10TimerHandle) clearTimeout(top10TimerHandle);
+  await refreshAgentTop10();
+  scheduleTop10Timer();
 }
 
 // ── 섹션 접기 / 펼치기 ──────────────────────────────────────────────────���─────
@@ -1764,7 +1834,8 @@ refreshRequests();
 setInterval(refresh,           3000);
 setInterval(refreshApmThreads, 5000);
 scheduleRemoteTimer();   // Remote: 사용자 설정 간격으로 타이머 관리
-scheduleAgentTimer();    // Agent:  사용자 설정 간격으로 타이머 관리
+scheduleAgentTimer();    // Agent 스레드: 사용자 설정 간격으로 타이머 관리
+scheduleTop10Timer();    // CPU Top 10: 독립 간격 타이머
 setInterval(refreshDbPools,    8000);
 setInterval(refreshRequests,   3000);
 </script>
