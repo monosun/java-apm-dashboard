@@ -79,6 +79,7 @@
                             <classifier>agent</classifier>
                             <includes>
                                 <include>com/monosun/monitor/agent/**</include>
+                                <include>com/monosun/monitor/core/RequestLogger*.class</include>
                             </includes>
                             <archive>
                                 <manifestEntries>
