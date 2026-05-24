@@ -3,6 +3,8 @@ package com.monosun.monitor.agent;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 
+import javax.management.MBeanServer;
+import javax.management.ObjectName;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.lang.management.*;
@@ -77,6 +79,22 @@ public class AgentHttpServer {
 
         server.createContext("/agent/dbpools",    ex -> handle(ex, "application/json",
             () -> listToJson(collector.getConnectionPools())));
+
+        server.createContext("/agent/trace/",     ex -> handle(ex, "application/json",
+            () -> {
+                String traceId = ex.getRequestURI().getPath().substring("/agent/trace/".length()).trim();
+                if (traceId.isEmpty()) return "{\"error\":\"traceId required\"}";
+                try {
+                    MBeanServer mbs = ManagementFactory.getPlatformMBeanServer();
+                    ObjectName  on  = new ObjectName("com.monosun.monitor:type=TraceRegistry");
+                    if (!mbs.isRegistered(on)) return "{\"error\":\"TraceRegistry not registered\"}";
+                    Object result = mbs.invoke(on, "getContext",
+                        new Object[]{traceId}, new String[]{"java.lang.String"});
+                    return result != null ? (String) result : "{\"error\":\"trace context not found\"}";
+                } catch (Exception e) {
+                    return "{\"error\":\"" + esc(e.getMessage()) + "\"}";
+                }
+            }));
 
         server.setExecutor(Executors.newFixedThreadPool(2, r -> {
             Thread t = new Thread(r, "agent-http");

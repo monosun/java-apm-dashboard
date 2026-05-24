@@ -329,6 +329,22 @@
   </div>
 </div>
 
+<!-- ══════════════════ Trace Context Modal ══════════════════ -->
+<div id="trace-modal" style="display:none">
+  <div class="modal-backdrop" onclick="closeTraceModal(event)">
+    <div class="modal-box wide" onclick="event.stopPropagation()">
+      <div class="modal-hd">
+        <span class="modal-title" id="trace-modal-title">Trace Context</span>
+        <button class="modal-close" onclick="closeTraceModal()">✕</button>
+      </div>
+      <div class="modal-body" id="trace-modal-body">로딩 중...</div>
+      <div class="modal-ft">
+        <button class="btn btn-sm" onclick="closeTraceModal()">닫기</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ══════════════════════════ HEADER ══════════════════════════ -->
 <header>
   <h1>☕ Java APM Dashboard</h1>
@@ -1361,7 +1377,7 @@ function renderRequestRows(reqs, tbodyId, histKey){
       ?`<span style="color:#94A3B8">${avgMs.toLocaleString()}</span>`
       :'<span style="color:#334155">—</span>';
     const traceCell=r.traceId
-      ?`<span class="trace-badge" title="${esc(r.traceId)}">${esc(r.traceId.slice(0,8))}</span>`
+      ?`<span class="trace-badge" title="클릭하여 요청 컨텍스트 조회 (${esc(r.traceId)})" style="cursor:pointer" onclick="event.stopPropagation();openTraceContext('${esc(r.traceId)}')">${esc(r.traceId.slice(0,8))}</span>`
       :'<span style="color:#334155">—</span>';
     return`<tr class="clickable" style="${rowStyle}" onclick="openRequestDetail(${idx},'${histKey}')">
       <td class="mono" title="${esc(workerName)}" style="max-width:200px;overflow:hidden;text-overflow:ellipsis">${esc(workerName)}</td>
@@ -1416,7 +1432,7 @@ function buildRequestDetailHtml(req, thread){
   if(uri)    html+=`<span class="req-uri">${esc(uri)}</span>`;
   else       html+=`<span class="req-uri" style="color:#475569">URI 없음 (유휴 상태)</span>`;
   if(qs)     html+=`<span class="req-qs">?${esc(qs)}</span>`;
-  if(req.traceId) html+=`<div style="margin:8px 0 4px"><span class="trace-badge" style="font-size:0.7rem;padding:2px 8px" title="Trace ID">${esc(req.traceId)}</span></div>`;
+  if(req.traceId) html+=`<div style="margin:8px 0 4px"><span class="trace-badge" style="font-size:0.7rem;padding:2px 8px;cursor:pointer" title="클릭하여 요청 컨텍스트 조회" onclick="openTraceContext('${esc(req.traceId)}')">${esc(req.traceId)}</span></div>`;
   html+=`<div class="req-meta-grid">`;
   if(vHost)  html+=`<div class="td-item"><div class="td-label">Virtual Host</div><div class="td-value monof">${esc(vHost)}</div></div>`;
   html+=`<div class="td-item"><div class="td-label">Remote IP</div><div class="td-value monof">${esc(ip)||'—'}</div></div>`;
@@ -1461,9 +1477,11 @@ function buildRequestDetailHtml(req, thread){
   }
   html+=`</div>`;
 
-  html+=`<div style="font-size:0.68rem;color:#334155;margin-top:6px;padding:6px 10px;background:#0A1220;border-radius:4px">
-    ⓘ HTTP 요청 헤더(Accept, Authorization 등)는 Tomcat RequestProcessor MBean이 노출하지 않습니다.
-    method · URI · queryString · IP · contentType 등은 <code>logs/http-requests.log</code>에 기록됩니다.
+  if(req.traceId) html+=`<div style="font-size:0.72rem;color:#475569;margin-top:8px;padding:6px 10px;background:#0A1220;border-radius:4px">
+    ⓘ Trace ID 배지를 클릭하면 <strong style="color:#94A3B8">RequestContextCaptureFilter</strong>가 캡처한 HTTP 헤더와 파라미터를 확인할 수 있습니다.
+  </div>`;
+  else html+=`<div style="font-size:0.68rem;color:#334155;margin-top:6px;padding:6px 10px;background:#0A1220;border-radius:4px">
+    ⓘ HTTP 요청 헤더·파라미터는 대상 webapp에 <code>RequestContextCaptureFilter</code>를 등록해야 조회 가능합니다.
   </div>`;
 
   return html;
@@ -1472,6 +1490,77 @@ function buildRequestDetailHtml(req, thread){
 function closeReqModal(e){
   if(e&&e.currentTarget!==e.target) return;
   document.getElementById('req-modal').style.display='none';
+}
+
+// ── Trace Context Modal ───────────────────────────────────────────────────────
+async function openTraceContext(traceId) {
+  document.getElementById('trace-modal').style.display='';
+  document.getElementById('trace-modal-title').textContent=`Trace Context — ${traceId}`;
+  document.getElementById('trace-modal-body').innerHTML='<div style="padding:20px;text-align:center;color:#475569">로딩 중...</div>';
+  try {
+    const data=await fetch(`/agent/trace/${encodeURIComponent(traceId)}`).then(r=>r.json());
+    document.getElementById('trace-modal-body').innerHTML=buildTraceContextHtml(data);
+  } catch(e) {
+    document.getElementById('trace-modal-body').innerHTML=`<div style="color:#F87171;padding:16px">로드 실패: ${e.message}</div>`;
+  }
+}
+
+function buildTraceContextHtml(data) {
+  if(data.error) return `<div class="req-section" style="color:#F87171;font-size:0.85rem">${esc(data.error)}</div>`;
+
+  let html='';
+
+  // 기본 요청 정보
+  html+=`<div class="req-section"><div class="req-section-hd">요청 정보</div>`;
+  if(data.method) html+=`<span class="method-badge">${esc(data.method)}</span>`;
+  if(data.uri)    html+=`<span class="req-uri">${esc(data.uri)}</span>`;
+  if(data.queryString) html+=`<span class="req-qs">?${esc(data.queryString)}</span>`;
+  html+=`<div class="req-meta-grid">`;
+  html+=`<div class="td-item"><div class="td-label">Remote IP</div><div class="td-value monof">${esc(normalizeIp(data.remoteAddr||''))||'—'}</div></div>`;
+  if(data.capturedAt) html+=`<div class="td-item"><div class="td-label">캡처 시각</div><div class="td-value monof">${new Date(data.capturedAt).toLocaleTimeString('ko-KR')}</div></div>`;
+  html+=`</div></div>`;
+
+  // HTTP 헤더
+  const headers=data.headers||{};
+  const hKeys=Object.keys(headers);
+  if(hKeys.length>0){
+    html+=`<div class="req-section"><div class="req-section-hd">HTTP 헤더 (${hKeys.length})</div>`;
+    html+=`<table style="width:100%;font-size:0.78rem"><thead><tr>`;
+    html+=`<th style="text-align:left;padding:5px 8px;color:#475569;font-size:0.67rem;width:200px">Header</th>`;
+    html+=`<th style="text-align:left;padding:5px 8px;color:#475569;font-size:0.67rem">Value</th></tr></thead><tbody>`;
+    for(const k of hKeys){
+      html+=`<tr><td style="padding:3px 8px;color:#94A3B8;font-family:monospace;white-space:nowrap">${esc(k)}</td>`;
+      html+=`<td style="padding:3px 8px;color:#CBD5E1;font-family:monospace;word-break:break-all">${esc(headers[k])}</td></tr>`;
+    }
+    html+=`</tbody></table></div>`;
+  }
+
+  // Request 파라미터
+  const params=data.params||{};
+  const pKeys=Object.keys(params);
+  if(pKeys.length>0){
+    html+=`<div class="req-section"><div class="req-section-hd">Request 파라미터 (${pKeys.length})</div>`;
+    html+=`<table style="width:100%;font-size:0.78rem"><thead><tr>`;
+    html+=`<th style="text-align:left;padding:5px 8px;color:#475569;font-size:0.67rem;width:200px">Parameter</th>`;
+    html+=`<th style="text-align:left;padding:5px 8px;color:#475569;font-size:0.67rem">Value(s)</th></tr></thead><tbody>`;
+    for(const k of pKeys){
+      const vals=Array.isArray(params[k])?params[k]:[params[k]];
+      html+=`<tr><td style="padding:3px 8px;color:#94A3B8;font-family:monospace">${esc(k)}</td>`;
+      html+=`<td style="padding:3px 8px;color:#4ADE80;font-family:monospace">${vals.map(v=>esc(v)).join('<span style="color:#475569">, </span>')}</td></tr>`;
+    }
+    html+=`</tbody></table></div>`;
+  }
+
+  if(!hKeys.length&&!pKeys.length&&!data.error){
+    html+=`<div class="req-section" style="color:#475569;font-size:0.82rem;text-align:center;padding:20px">헤더 및 파라미터 정보 없음</div>`;
+  }
+
+  return html;
+}
+
+function closeTraceModal(e){
+  if(e&&e.currentTarget!==e.target) return;
+  document.getElementById('trace-modal').style.display='none';
 }
 
 function fmtBytes(b){

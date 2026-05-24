@@ -4,6 +4,7 @@ import javax.servlet.*;
 import javax.servlet.http.HttpServletRequest;
 import java.io.IOException;
 import java.util.*;
+import java.util.Enumeration;
 
 /**
  * 요청 파라미터·헤더를 {@link RequestContextStore}에 traceId 키로 저장하는 서블릿 필터.
@@ -82,6 +83,7 @@ public class RequestContextCaptureFilter implements Filter {
 
         if (traceId != null) {
             RequestContextStore.put(traceId, buildInfo(traceId, request));
+            TraceRegistry.registerContext(traceId, buildContextJson(traceId, request));
         }
 
         try {
@@ -92,16 +94,64 @@ public class RequestContextCaptureFilter implements Filter {
                     // async 완료 시점에 제거
                     final String asyncTraceId = traceId;
                     request.getAsyncContext().addListener(new AsyncListener() {
-                        @Override public void onComplete(AsyncEvent e)   { RequestContextStore.remove(asyncTraceId); }
-                        @Override public void onTimeout(AsyncEvent e)    { RequestContextStore.remove(asyncTraceId); }
-                        @Override public void onError(AsyncEvent e)      { RequestContextStore.remove(asyncTraceId); }
+                        @Override public void onComplete(AsyncEvent e)   { cleanup(asyncTraceId); }
+                        @Override public void onTimeout(AsyncEvent e)    { cleanup(asyncTraceId); }
+                        @Override public void onError(AsyncEvent e)      { cleanup(asyncTraceId); }
                         @Override public void onStartAsync(AsyncEvent e) {}
                     });
                 } else {
-                    RequestContextStore.remove(traceId);
+                    cleanup(traceId);
                 }
             }
         }
+    }
+
+    private void cleanup(String traceId) {
+        RequestContextStore.remove(traceId);
+        TraceRegistry.deregisterContext(traceId);
+    }
+
+    private String buildContextJson(String traceId, HttpServletRequest req) {
+        StringBuilder sb = new StringBuilder("{");
+        sb.append("\"traceId\":\"").append(ej(traceId)).append("\",");
+        sb.append("\"method\":\"").append(ej(req.getMethod())).append("\",");
+        sb.append("\"uri\":\"").append(ej(req.getRequestURI())).append("\",");
+        String qs = req.getQueryString();
+        sb.append("\"queryString\":").append(qs != null ? "\"" + ej(qs) + "\"" : "null").append(',');
+        sb.append("\"remoteAddr\":\"").append(ej(req.getRemoteAddr())).append("\",");
+        sb.append("\"headers\":{");
+        boolean first = true;
+        Enumeration<String> hn = req.getHeaderNames();
+        if (hn != null) {
+            while (hn.hasMoreElements()) {
+                String name = hn.nextElement();
+                if (skipHeaders.contains(name.toLowerCase())) continue;
+                if (!first) sb.append(',');
+                sb.append('"').append(ej(name)).append("\":\"").append(ej(req.getHeader(name))).append('"');
+                first = false;
+            }
+        }
+        sb.append("},\"params\":{");
+        first = true;
+        for (Map.Entry<String, String[]> e : req.getParameterMap().entrySet()) {
+            if (!first) sb.append(',');
+            sb.append('"').append(ej(e.getKey())).append("\":[");
+            String[] vals = e.getValue();
+            for (int i = 0; i < vals.length; i++) {
+                if (i > 0) sb.append(',');
+                sb.append('"').append(ej(vals[i])).append('"');
+            }
+            sb.append(']');
+            first = false;
+        }
+        sb.append("},\"capturedAt\":").append(System.currentTimeMillis()).append('}');
+        return sb.toString();
+    }
+
+    private static String ej(String s) {
+        if (s == null) return "";
+        return s.replace("\\", "\\\\").replace("\"", "\\\"")
+                .replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t");
     }
 
     private RequestInfo buildInfo(String traceId, HttpServletRequest req) {

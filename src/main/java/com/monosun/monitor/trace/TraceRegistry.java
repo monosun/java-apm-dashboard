@@ -24,7 +24,8 @@ public final class TraceRegistry implements DynamicMBean {
 
     public static final String OBJECT_NAME = "com.monosun.monitor:type=TraceRegistry";
 
-    private static final ConcurrentHashMap<Long, String> MAP = new ConcurrentHashMap<>(64);
+    private static final ConcurrentHashMap<Long, String>   MAP         = new ConcurrentHashMap<>(64);
+    private static final ConcurrentHashMap<String, String> CONTEXT_MAP = new ConcurrentHashMap<>(64);
 
     static {
         try {
@@ -51,6 +52,18 @@ public final class TraceRegistry implements DynamicMBean {
     /** 동일 JVM 내 직접 읽기 (클래스로더가 같을 때) */
     public static String get(long threadId) {
         return MAP.get(threadId);
+    }
+
+    public static void registerContext(String traceId, String contextJson) {
+        if (traceId != null && contextJson != null) CONTEXT_MAP.put(traceId, contextJson);
+    }
+
+    public static String getContext(String traceId) {
+        return traceId != null ? CONTEXT_MAP.get(traceId) : null;
+    }
+
+    public static void deregisterContext(String traceId) {
+        if (traceId != null) CONTEXT_MAP.remove(traceId);
     }
 
     // ── DynamicMBean ──────────────────────────────────────────────────────────
@@ -84,6 +97,18 @@ public final class TraceRegistry implements DynamicMBean {
                 if (params != null && params.length == 1)
                     deregister((Long) params[0]);
                 return null;
+            case "registerContext":
+                if (params != null && params.length == 2)
+                    registerContext((String) params[0], (String) params[1]);
+                return null;
+            case "getContext":
+                if (params != null && params.length == 1)
+                    return getContext((String) params[0]);
+                return null;
+            case "deregisterContext":
+                if (params != null && params.length == 1)
+                    deregisterContext((String) params[0]);
+                return null;
             default:
                 return null;
         }
@@ -114,6 +139,19 @@ public final class TraceRegistry implements DynamicMBean {
                 new MBeanOperationInfo("deregisterTrace", "Remove trace ID for a thread",
                     new MBeanParameterInfo[]{
                         new MBeanParameterInfo("threadId", "long", "Thread ID")
+                    }, "void", MBeanOperationInfo.ACTION),
+                new MBeanOperationInfo("registerContext", "Register request context JSON for a trace ID",
+                    new MBeanParameterInfo[]{
+                        new MBeanParameterInfo("traceId",     "java.lang.String", "Trace ID"),
+                        new MBeanParameterInfo("contextJson", "java.lang.String", "Request context JSON")
+                    }, "void", MBeanOperationInfo.ACTION),
+                new MBeanOperationInfo("getContext", "Get request context JSON by trace ID",
+                    new MBeanParameterInfo[]{
+                        new MBeanParameterInfo("traceId", "java.lang.String", "Trace ID")
+                    }, "java.lang.String", MBeanOperationInfo.INFO),
+                new MBeanOperationInfo("deregisterContext", "Remove request context for a trace ID",
+                    new MBeanParameterInfo[]{
+                        new MBeanParameterInfo("traceId", "java.lang.String", "Trace ID")
                     }, "void", MBeanOperationInfo.ACTION)
             },
             null);

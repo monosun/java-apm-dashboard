@@ -139,6 +139,13 @@ public class AgentHttpClient implements AutoCloseable {
         catch (Exception e) { return "[]"; }
     }
 
+    /** traceId에 대응하는 요청 컨텍스트 (헤더, 파라미터) JSON */
+    public String getTraceContextJson(String traceId) {
+        if (!connected) return "{\"error\":\"not connected\"}";
+        try { return get("/agent/trace/" + traceId); }
+        catch (Exception e) { return "{\"error\":\"" + e.getMessage().replace("\"", "'") + "\"}"; }
+    }
+
     // ── 캐시된 데이터 접근자 ──────────────────────────────────────────────────
 
     public String getJvmJson()      { return jvmJson; }

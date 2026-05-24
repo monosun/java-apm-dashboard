@@ -147,6 +147,14 @@ public class MetricsHttpServer {
             () -> agentClient != null && agentClient.isConnected()
                 ? agentClient.getTop10Json() : "[]"));
 
+        server.createContext("/agent/trace/", exchange -> handle(exchange, "application/json",
+            () -> {
+                if (agentClient == null) return "{\"error\":\"not configured\"}";
+                String traceId = exchange.getRequestURI().getPath().substring("/agent/trace/".length()).trim();
+                if (traceId.isEmpty()) return "{\"error\":\"traceId required\"}";
+                return agentClient.getTraceContextJson(traceId);
+            }));
+
         server.setExecutor(Executors.newFixedThreadPool(4, r -> {
             Thread t = new Thread(r, "metrics-http");
             t.setDaemon(true);
