@@ -1406,15 +1406,19 @@ async function openRequestDetail(idx, source){
   document.getElementById('req-modal').style.display='';
   document.getElementById('req-modal-title').textContent=`HTTP 요청 상세 — ${req.worker||'?'}`;
   document.getElementById('req-modal-body').innerHTML='<div style="padding:20px;text-align:center;color:#475569">로딩 중...</div>';
-  let threadDetail=null;
-  if(thread){
-    const url=`/agent/thread/${thread.id}`;
-    try{ threadDetail=await fetch(url).then(r=>r.json()); }catch(_){}
-  }
-  document.getElementById('req-modal-body').innerHTML=buildRequestDetailHtml(req,threadDetail||thread);
+  let threadDetail=null, traceCtx=null;
+  const fetches=[];
+  if(thread) fetches.push(
+    fetch(`/agent/thread/${thread.id}`).then(r=>r.json()).then(d=>{threadDetail=d;}).catch(()=>{})
+  );
+  if(req.traceId) fetches.push(
+    fetch(`/agent/trace/${encodeURIComponent(req.traceId)}`).then(r=>r.json()).then(d=>{traceCtx=d;}).catch(()=>{})
+  );
+  await Promise.all(fetches);
+  document.getElementById('req-modal-body').innerHTML=buildRequestDetailHtml(req,threadDetail||thread,traceCtx);
 }
 
-function buildRequestDetailHtml(req, thread){
+function buildRequestDetailHtml(req, thread, traceCtx){
   const uri=req.currentUri||'';
   const qs=req.queryString||'';
   const method=req.method||'';
@@ -1482,12 +1486,49 @@ function buildRequestDetailHtml(req, thread){
   }
   html+=`</div>`;
 
-  if(req.traceId) html+=`<div style="font-size:0.72rem;color:#475569;margin-top:8px;padding:6px 10px;background:#0A1220;border-radius:4px">
-    ⓘ Trace ID 배지를 클릭하면 <strong style="color:#94A3B8">RequestContextCaptureFilter</strong>가 캡처한 HTTP 헤더와 파라미터를 확인할 수 있습니다.
-  </div>`;
-  else html+=`<div style="font-size:0.68rem;color:#334155;margin-top:6px;padding:6px 10px;background:#0A1220;border-radius:4px">
-    ⓘ HTTP 요청 헤더·파라미터는 대상 webapp에 <code>RequestContextCaptureFilter</code>를 등록해야 조회 가능합니다.
-  </div>`;
+  // Trace Context 인라인 표시
+  if(traceCtx && !traceCtx.error){
+    const headers=traceCtx.headers||{};
+    const hKeys=Object.keys(headers);
+    if(hKeys.length>0){
+      html+=`<div class="req-section"><div class="req-section-hd">HTTP 헤더 (${hKeys.length})</div>`;
+      html+=`<table style="width:100%;font-size:0.78rem"><thead><tr>`;
+      html+=`<th style="text-align:left;padding:5px 8px;color:#475569;font-size:0.67rem;width:200px">Header</th>`;
+      html+=`<th style="text-align:left;padding:5px 8px;color:#475569;font-size:0.67rem">Value</th></tr></thead><tbody>`;
+      for(const k of hKeys){
+        html+=`<tr><td style="padding:3px 8px;color:#94A3B8;font-family:monospace;white-space:nowrap">${esc(k)}</td>`;
+        html+=`<td style="padding:3px 8px;color:#CBD5E1;font-family:monospace;word-break:break-all">${esc(headers[k])}</td></tr>`;
+      }
+      html+=`</tbody></table></div>`;
+    }
+    const params=traceCtx.params||{};
+    const pKeys=Object.keys(params);
+    if(pKeys.length>0){
+      html+=`<div class="req-section"><div class="req-section-hd">Request 파라미터 (${pKeys.length})</div>`;
+      html+=`<table style="width:100%;font-size:0.78rem"><thead><tr>`;
+      html+=`<th style="text-align:left;padding:5px 8px;color:#475569;font-size:0.67rem;width:200px">Parameter</th>`;
+      html+=`<th style="text-align:left;padding:5px 8px;color:#475569;font-size:0.67rem">Value(s)</th></tr></thead><tbody>`;
+      for(const k of pKeys){
+        const vals=Array.isArray(params[k])?params[k]:[params[k]];
+        html+=`<tr><td style="padding:3px 8px;color:#94A3B8;font-family:monospace">${esc(k)}</td>`;
+        html+=`<td style="padding:3px 8px;color:#4ADE80;font-family:monospace">${vals.map(v=>esc(v)).join('<span style="color:#475569">, </span>')}</td></tr>`;
+      }
+      html+=`</tbody></table></div>`;
+    }
+    if(!hKeys.length&&!pKeys.length){
+      html+=`<div style="font-size:0.72rem;color:#475569;margin-top:8px;padding:6px 10px;background:#0A1220;border-radius:4px">
+        ⓘ 캡처된 헤더·파라미터 데이터가 없습니다 (요청 처리 완료 후 컨텍스트가 소거되었을 수 있습니다).
+      </div>`;
+    }
+  } else if(traceCtx && traceCtx.error){
+    html+=`<div style="font-size:0.72rem;color:#F87171;margin-top:8px;padding:6px 10px;background:#0A1220;border-radius:4px">
+      ⓘ Trace Context 조회 실패: ${esc(traceCtx.error)}
+    </div>`;
+  } else if(!req.traceId){
+    html+=`<div style="font-size:0.68rem;color:#334155;margin-top:6px;padding:6px 10px;background:#0A1220;border-radius:4px">
+      ⓘ HTTP 요청 헤더·파라미터는 대상 webapp에 <code>RequestContextCaptureFilter</code>를 등록해야 조회 가능합니다.
+    </div>`;
+  }
 
   return html;
 }
