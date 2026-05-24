@@ -45,11 +45,12 @@ public final class HtmlInjectionWrapper extends HttpServletResponseWrapper {
         return sos;
     }
 
-    /** TraceIdFilter 가 chain.doFilter() 완료 후 반드시 호출 */
+    /** TraceIdFilter 가 chain.doFilter() 완료 후 반드시 호출 (async 경로에서는 호출하지 않음) */
     public void finish() throws IOException {
         if (finished) return;
         finished = true;
         if (pw != null) pw.flush();
+        if (buf.size() == 0) return; // async 등의 이유로 wrapper에 아무것도 쓰이지 않은 경우
 
         String html    = buf.toString(charset().name());
         String patched = inject(html);

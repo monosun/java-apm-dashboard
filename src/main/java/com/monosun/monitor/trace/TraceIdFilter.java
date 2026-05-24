@@ -118,13 +118,10 @@ public class TraceIdFilter implements Filter {
                 chain.doFilter(request, wrapped);
             } finally {
                 if (request.isAsyncStarted()) {
-                    // async 완료 시점에 주입 및 cleanup
+                    // async 서블릿은 원본 response에 직접 쓰므로 wrapper를 통한 주입 불가 — cleanup만 수행
                     final long asyncTid = tid;
                     request.getAsyncContext().addListener(new AsyncListener() {
-                        @Override public void onComplete(AsyncEvent e) throws IOException {
-                            wrapped.finish();
-                            jmxDeregister(asyncTid);
-                        }
+                        @Override public void onComplete(AsyncEvent e)   { jmxDeregister(asyncTid); }
                         @Override public void onTimeout(AsyncEvent e)    { jmxDeregister(asyncTid); }
                         @Override public void onError(AsyncEvent e)      { jmxDeregister(asyncTid); }
                         @Override public void onStartAsync(AsyncEvent e) {}
