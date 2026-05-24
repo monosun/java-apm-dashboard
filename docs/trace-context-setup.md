@@ -151,38 +151,138 @@ cp java-monitor-integration.jar  /opt/tomcat/webapps/myapp/WEB-INF/lib/
 
 두 필터를 **이 순서대로** 선언합니다. `TraceIdFilter`가 먼저 실행되어야 합니다.
 
-```xml
-<!-- ① Trace ID 생성·전파·HTML 주입 -->
-<filter>
-  <filter-name>traceIdFilter</filter-name>
-  <filter-class>com.monosun.monitor.trace.TraceIdFilter</filter-class>
-  <async-supported>true</async-supported>
-  <init-param>
-    <param-name>injectHtml</param-name>
-    <param-value>true</param-value>  <!-- HTML 페이지에 window.__APM_TRACE_ID 주입 -->
-  </init-param>
-</filter>
-<filter-mapping>
-  <filter-name>traceIdFilter</filter-name>
-  <url-pattern>/*</url-pattern>
-</filter-mapping>
+#### 완전한 web.xml 예시 (신규 프로젝트 또는 단독 웹앱)
 
-<!-- ② 요청 헤더·파라미터 캡처 (TraceIdFilter 다음에 선언) -->
-<filter>
-  <filter-name>requestContextCaptureFilter</filter-name>
-  <filter-class>com.monosun.monitor.trace.RequestContextCaptureFilter</filter-class>
-  <async-supported>true</async-supported>
-  <!-- 선택: 캡처에서 제외할 헤더 (쉼표 구분, 소문자). 기본값: cookie,authorization -->
-  <init-param>
-    <param-name>skipHeaders</param-name>
-    <param-value>cookie,authorization,proxy-authorization</param-value>
-  </init-param>
-</filter>
-<filter-mapping>
-  <filter-name>requestContextCaptureFilter</filter-name>
-  <url-pattern>/*</url-pattern>
-</filter-mapping>
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<web-app xmlns="http://xmlns.jcp.org/xml/ns/javaee"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://xmlns.jcp.org/xml/ns/javaee
+                             http://xmlns.jcp.org/xml/ns/javaee/web-app_4_0.xsd"
+         version="4.0">
+
+  <display-name>My Application</display-name>
+
+  <!-- ══════════════════════════════════════════════════════════════
+       APM — Java Monitor Trace Context
+       java-monitor-integration.jar 을 WEB-INF/lib/ 에 배치한 후 활성화
+       ══════════════════════════════════════════════════════════════ -->
+
+  <!-- ① Trace ID 생성 · 전파 · HTML 주입 (window.__APM_TRACE_ID) -->
+  <filter>
+    <filter-name>traceIdFilter</filter-name>
+    <filter-class>com.monosun.monitor.trace.TraceIdFilter</filter-class>
+    <!-- 비동기 서블릿(startAsync) 사용 시 반드시 true -->
+    <async-supported>true</async-supported>
+    <init-param>
+      <!-- true: HTML 응답 </head> 직전에 <meta>+<script> 자동 주입 -->
+      <!-- false: HTML 주입 없이 Trace ID 전파만 수행               -->
+      <param-name>injectHtml</param-name>
+      <param-value>true</param-value>
+    </init-param>
+  </filter>
+  <filter-mapping>
+    <filter-name>traceIdFilter</filter-name>
+    <url-pattern>/*</url-pattern>
+  </filter-mapping>
+
+  <!-- ② 요청 헤더·파라미터 캡처 — traceIdFilter 다음에 선언 -->
+  <filter>
+    <filter-name>requestContextCaptureFilter</filter-name>
+    <filter-class>com.monosun.monitor.trace.RequestContextCaptureFilter</filter-class>
+    <async-supported>true</async-supported>
+    <init-param>
+      <!-- 캡처에서 제외할 헤더 (쉼표 구분, 소문자)           -->
+      <!-- 기본값: cookie,authorization                       -->
+      <!-- 운영 환경에서는 민감 헤더를 추가로 제외할 것        -->
+      <param-name>skipHeaders</param-name>
+      <param-value>cookie,authorization,proxy-authorization</param-value>
+    </init-param>
+  </filter>
+  <filter-mapping>
+    <filter-name>requestContextCaptureFilter</filter-name>
+    <url-pattern>/*</url-pattern>
+  </filter-mapping>
+
+  <!-- ══════════════════════════════════════════════════════════════
+       애플리케이션 서블릿 설정
+       ══════════════════════════════════════════════════════════════ -->
+
+  <servlet>
+    <servlet-name>dispatcher</servlet-name>
+    <servlet-class>org.springframework.web.servlet.DispatcherServlet</servlet-class>
+    <init-param>
+      <param-name>contextConfigLocation</param-name>
+      <param-value>/WEB-INF/spring/dispatcher-servlet.xml</param-value>
+    </init-param>
+    <load-on-startup>1</load-on-startup>
+    <async-supported>true</async-supported>
+  </servlet>
+  <servlet-mapping>
+    <servlet-name>dispatcher</servlet-name>
+    <url-pattern>/</url-pattern>
+  </servlet-mapping>
+
+  <!-- 세션 타임아웃 (선택) -->
+  <session-config>
+    <session-timeout>30</session-timeout>
+  </session-config>
+
+</web-app>
 ```
+
+#### 기존 web.xml에 추가하는 경우 (삽입 위치)
+
+이미 `web.xml`이 있는 프로젝트라면 아래 두 블록을 **기존 `<filter>` 선언보다 앞**에 추가합니다.  
+`<filter-mapping>` 선언 순서가 필터 실행 순서를 결정하므로,  
+APM 필터 두 개의 `<filter-mapping>`이 다른 필터보다 앞에 위치해야 합니다.
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<web-app ...>
+
+  <!-- ▼▼▼ 여기에 삽입 — 기존 filter/filter-mapping보다 앞 ▼▼▼ -->
+
+  <filter>
+    <filter-name>traceIdFilter</filter-name>
+    <filter-class>com.monosun.monitor.trace.TraceIdFilter</filter-class>
+    <async-supported>true</async-supported>
+    <init-param>
+      <param-name>injectHtml</param-name>
+      <param-value>true</param-value>
+    </init-param>
+  </filter>
+  <filter-mapping>
+    <filter-name>traceIdFilter</filter-name>
+    <url-pattern>/*</url-pattern>
+  </filter-mapping>
+
+  <filter>
+    <filter-name>requestContextCaptureFilter</filter-name>
+    <filter-class>com.monosun.monitor.trace.RequestContextCaptureFilter</filter-class>
+    <async-supported>true</async-supported>
+    <init-param>
+      <param-name>skipHeaders</param-name>
+      <param-value>cookie,authorization,proxy-authorization</param-value>
+    </init-param>
+  </filter>
+  <filter-mapping>
+    <filter-name>requestContextCaptureFilter</filter-name>
+    <url-pattern>/*</url-pattern>
+  </filter-mapping>
+
+  <!-- ▲▲▲ 여기까지 삽입 ▲▲▲ -->
+
+  <!-- 기존 필터·서블릿 설정 계속 -->
+  ...
+
+</web-app>
+```
+
+> **`<async-supported>true</async-supported>` 필수 여부**  
+> Spring MVC의 `DeferredResult`, `CompletableFuture`, WebFlux 등 비동기 처리를 사용한다면  
+> 반드시 `true`로 설정해야 합니다. 없으면 `IllegalStateException: startAsync is not supported` 오류가 발생합니다.  
+> REST API 전용 서버(HTML 주입 불필요)라면 `injectHtml`을 `false`로 설정해도 됩니다.
 
 ### 4-4. Tomcat 재시작
 
