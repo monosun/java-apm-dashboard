@@ -1,5 +1,6 @@
 package com.monosun.monitor.remote;
 
+import com.monosun.monitor.agent.AgentThreadCollector;
 import com.monosun.monitor.core.RequestLogger;
 import javax.management.*;
 import javax.management.remote.*;
@@ -193,6 +194,9 @@ public class RemoteJvmCollector implements AutoCloseable {
             ThreadInfo[] infos = threadMX.getThreadInfo(ids, 5); // 스택 5 프레임
             boolean cpuOk = threadMX.isThreadCpuTimeSupported() && threadMX.isThreadCpuTimeEnabled();
 
+            // TraceRegistry MBean 에서 traceId 맵 읽기 (원격 JVM에 필터가 설치된 경우)
+            Map<Long, String> traceMap = readRemoteTraceRegistry();
+
             List<Map<String, Object>> result = new ArrayList<>();
             for (ThreadInfo ti : infos) {
                 if (ti == null) continue;
@@ -210,6 +214,9 @@ public class RemoteJvmCollector implements AutoCloseable {
                     long ns = threadMX.getThreadCpuTime(ti.getThreadId());
                     if (ns >= 0) t.put("cpuMs", ns / 1_000_000L);
                 }
+
+                String traceId = traceMap.get(ti.getThreadId());
+                if (traceId != null) t.put("traceId", traceId);
 
                 StackTraceElement[] stack = ti.getStackTrace();
                 if (stack.length > 0) {
@@ -232,6 +239,19 @@ public class RemoteJvmCollector implements AutoCloseable {
             this.threadList = result;
         } catch (Exception e) {
             LOG.fine("[RemoteJvmCollector] 스레드 상세 수집 오류: " + e.getMessage());
+        }
+    }
+
+    /** 원격 JVM 의 TraceRegistry MBean 에서 threadId→traceId 맵 읽기 */
+    private Map<Long, String> readRemoteTraceRegistry() {
+        if (mbsc == null) return Collections.emptyMap();
+        try {
+            ObjectName on = new ObjectName("com.monosun.monitor:type=TraceRegistry");
+            if (mbsc.queryNames(on, null).isEmpty()) return Collections.emptyMap();
+            String json = (String) mbsc.getAttribute(on, "ActiveTraces");
+            return AgentThreadCollector.parseTraceJson(json);
+        } catch (Exception e) {
+            return Collections.emptyMap();
         }
     }
 

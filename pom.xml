@@ -6,7 +6,7 @@
 
     <groupId>com.monosun.monitor</groupId>
     <artifactId>java-monitor</artifactId>
-    <version>1.9.0</version>
+    <version>1.10.0</version>
     <packaging>jar</packaging>
     <name>Java APM Dashboard</name>
 
@@ -80,6 +80,9 @@
                             <includes>
                                 <include>com/monosun/monitor/agent/**</include>
                                 <include>com/monosun/monitor/core/RequestLogger*.class</include>
+                                <include>com/monosun/monitor/trace/TraceRegistry*.class</include>
+                                <include>com/monosun/monitor/trace/TraceIdFilter*.class</include>
+                                <include>com/monosun/monitor/trace/HtmlInjectionWrapper*.class</include>
                             </includes>
                             <archive>
                                 <manifestEntries>

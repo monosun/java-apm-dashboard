@@ -149,6 +149,12 @@
     .mono { font-family: monospace; font-size: 0.72rem; color: #475569;
             max-width: 320px; overflow: hidden; text-overflow: ellipsis; }
     .tname { max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+    .trace-badge {
+      display:inline-block; background:#0F766E; color:#CCFBF1;
+      font-size:0.58rem; padding:1px 5px; border-radius:3px;
+      margin-left:5px; font-family:'Consolas','Menlo',monospace;
+      cursor:help; vertical-align:middle; letter-spacing:0.03em;
+    }
     .no-data { text-align: center; color: #475569; padding: 20px 0 !important; }
 
     /* ── Live dump panel ─────────────────────────────────────────────────────── */
@@ -610,9 +616,10 @@
                 <th style="text-align:right">평균 (ms)</th>
                 <th style="text-align:right">누적 요청</th>
                 <th style="text-align:right">오류</th>
+                <th style="width:100px">Trace ID</th>
               </tr></thead>
               <tbody id="remote-requests-tbody">
-                <tr><td class="no-data" colspan="8">Tomcat 기반 JVM 연결 시 표시됩니다</td></tr>
+                <tr><td class="no-data" colspan="9">Tomcat 기반 JVM 연결 시 표시됩니다</td></tr>
               </tbody>
             </table>
           </div>
@@ -780,9 +787,10 @@
                 <th style="text-align:right">평균 (ms)</th>
                 <th style="text-align:right">누적 요청</th>
                 <th style="text-align:right">오류</th>
+                <th style="width:100px">Trace ID</th>
               </tr></thead>
               <tbody id="agent-requests-tbody">
-                <tr><td class="no-data" colspan="8">Agent 기반 Tomcat JVM 연결 시 표시됩니다</td></tr>
+                <tr><td class="no-data" colspan="9">Agent 기반 Tomcat JVM 연결 시 표시됩니다</td></tr>
               </tbody>
             </table>
           </div>
@@ -1159,7 +1167,9 @@ function renderThreads(scope, tbodyId, pillsId, allThreads, showPrio){
     const lock=t.lockOwner?`⛔ ${esc(t.lockOwner)}`:t.lockName?`⏳ ${esc(shortCls(t.lockName))}`:'';
     const cpu=t.cpuMs!=null?Number(t.cpuMs).toLocaleString():'—';
     const frame=esc(t.topFrame||t.stackTrace?.[0]||'');
-    const name=esc(t.name)+(t.daemon?' <span style="color:#475569;font-size:0.67rem">[d]</span>':'');
+    const traceBadge=t.traceId
+      ?`<span class="trace-badge" title="Trace ID: ${esc(t.traceId)}">${esc(t.traceId.slice(0,8))}</span>`:'';
+    const name=esc(t.name)+(t.daemon?' <span style="color:#475569;font-size:0.67rem">[d]</span>':'')+traceBadge;
     const idAttr=`data-thread-id="${t.id}" data-scope="${scope}"`;
     if(showPrio) return`<tr class="clickable" ${idAttr} onclick="openThreadDetail(this)">
       <td>${badge}</td><td class="tname" title="${esc(t.name)}">${name}</td>
@@ -1543,7 +1553,7 @@ function renderRequestRows(reqs, tbodyId, histKey){
   if(!tbody) return;
   const summaryEl=document.getElementById(histKey==='remote'?'remote-requests-summary':'agent-requests-summary');
   if(!reqs||reqs.length===0){
-    tbody.innerHTML='<tr><td class="no-data" colspan="8">Tomcat 기반 JVM 연결 시 표시됩니다</td></tr>';
+    tbody.innerHTML='<tr><td class="no-data" colspan="9">Tomcat 기반 JVM 연결 시 표시됩니다</td></tr>';
     if(summaryEl) summaryEl.textContent='';
     return;
   }
@@ -1584,6 +1594,9 @@ function renderRequestRows(reqs, tbodyId, histKey){
     const avgCell=active&&avgMs!=null
       ?`<span style="color:#94A3B8">${avgMs.toLocaleString()}</span>`
       :'<span style="color:#334155">—</span>';
+    const traceCell=r.traceId
+      ?`<span class="trace-badge" title="${esc(r.traceId)}">${esc(r.traceId.slice(0,8))}</span>`
+      :'<span style="color:#334155">—</span>';
     return`<tr class="clickable" style="${rowStyle}" onclick="openRequestDetail(${idx},'${histKey}')">
       <td class="mono" title="${esc(workerName)}" style="max-width:200px;overflow:hidden;text-overflow:ellipsis">${esc(workerName)}</td>
       <td>${method?`<span class="method-badge">${esc(method)}</span>`:'<span style="color:#334155">—</span>'}</td>
@@ -1593,6 +1606,7 @@ function renderRequestRows(reqs, tbodyId, histKey){
       <td style="text-align:right">${avgCell}</td>
       <td style="text-align:right">${r.requestCount??'—'}</td>
       <td style="text-align:right">${r.errorCount??0}</td>
+      <td>${traceCell}</td>
     </tr>`;
   }).join('');
 }
@@ -1637,6 +1651,7 @@ function buildRequestDetailHtml(req, thread){
   if(uri)    html+=`<span class="req-uri">${esc(uri)}</span>`;
   else       html+=`<span class="req-uri" style="color:#475569">URI 없음 (유휴 상태)</span>`;
   if(qs)     html+=`<span class="req-qs">?${esc(qs)}</span>`;
+  if(req.traceId) html+=`<div style="margin:8px 0 4px"><span class="trace-badge" style="font-size:0.7rem;padding:2px 8px" title="Trace ID">${esc(req.traceId)}</span></div>`;
   html+=`<div class="req-meta-grid">`;
   if(vHost)  html+=`<div class="td-item"><div class="td-label">Virtual Host</div><div class="td-value monof">${esc(vHost)}</div></div>`;
   html+=`<div class="td-item"><div class="td-label">Remote IP</div><div class="td-value monof">${esc(ip)||'—'}</div></div>`;

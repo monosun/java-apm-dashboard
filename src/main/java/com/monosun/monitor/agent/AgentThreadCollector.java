@@ -5,6 +5,7 @@ import javax.management.*;
 import java.lang.management.*;
 import java.time.Instant;
 import java.util.*;
+import java.util.logging.Logger;
 
 /**
  * 대상 JVM에서 스레드 상세 정보를 수집합니다.
@@ -12,7 +13,10 @@ import java.util.*;
  */
 public class AgentThreadCollector {
 
-    private final ThreadMXBean threadMX    = ManagementFactory.getThreadMXBean();
+    private static final Logger LOG = Logger.getLogger(AgentThreadCollector.class.getName());
+    private static final String TRACE_REGISTRY_MBEAN = "com.monosun.monitor:type=TraceRegistry";
+
+    private final ThreadMXBean  threadMX      = ManagementFactory.getThreadMXBean();
     private final RequestLogger requestLogger = new RequestLogger("agent");
 
     public AgentThreadCollector() {
@@ -32,11 +36,15 @@ public class AgentThreadCollector {
         boolean cpuOk    = threadMX.isThreadCpuTimeSupported() && threadMX.isThreadCpuTimeEnabled();
         boolean timingOk = threadMX.isThreadContentionMonitoringSupported()
                         && threadMX.isThreadContentionMonitoringEnabled();
+        Map<Long, String> traceMap = readLocalTraceRegistry();
 
         List<Map<String, Object>> result = new ArrayList<>();
         for (ThreadInfo ti : infos) {
             if (ti == null) continue;
-            result.add(toMap(ti, cpuOk, timingOk, maxFrames));
+            Map<String, Object> m = toMap(ti, cpuOk, timingOk, maxFrames);
+            String tid = traceMap.get(ti.getThreadId());
+            if (tid != null) m.put("traceId", tid);
+            result.add(m);
         }
         result.sort((a, b) -> {
             int oa = stateOrder(a.get("state").toString());
@@ -56,7 +64,10 @@ public class AgentThreadCollector {
         boolean cpuOk    = threadMX.isThreadCpuTimeSupported() && threadMX.isThreadCpuTimeEnabled();
         boolean timingOk = threadMX.isThreadContentionMonitoringSupported()
                         && threadMX.isThreadContentionMonitoringEnabled();
-        return toMap(infos[0], cpuOk, timingOk, Integer.MAX_VALUE);
+        Map<String, Object> m = toMap(infos[0], cpuOk, timingOk, Integer.MAX_VALUE);
+        String traceId = readLocalTraceRegistry().get(id);
+        if (traceId != null) m.put("traceId", traceId);
+        return m;
     }
 
     /** 전체 스레드 덤프 (jstack 형식) */
@@ -193,6 +204,41 @@ public class AgentThreadCollector {
         return result;
     }
 
+    // ── TraceRegistry 읽기 (로컬 MBeanServer 경유) ──────────────────────────────
+
+    /** 플랫폼 MBeanServer 에서 TraceRegistry MBean 을 조회해 threadId→traceId 맵 반환 */
+    Map<Long, String> readLocalTraceRegistry() {
+        try {
+            MBeanServer mbs = ManagementFactory.getPlatformMBeanServer();
+            ObjectName  on  = new ObjectName(TRACE_REGISTRY_MBEAN);
+            if (!mbs.isRegistered(on)) return Collections.emptyMap();
+            String json = (String) mbs.getAttribute(on, "ActiveTraces");
+            return parseTraceJson(json);
+        } catch (Exception e) {
+            return Collections.emptyMap();
+        }
+    }
+
+    public static Map<Long, String> parseTraceJson(String json) {
+        Map<Long, String> m = new HashMap<>();
+        if (json == null || json.isBlank()) return m;
+        // {"123":"abc","456":"def"}
+        String inner = json.trim();
+        if (inner.startsWith("{")) inner = inner.substring(1);
+        if (inner.endsWith("}"))   inner = inner.substring(0, inner.length() - 1);
+        if (inner.isBlank()) return m;
+        for (String pair : inner.split(",")) {
+            String[] kv = pair.split(":", 2);
+            if (kv.length < 2) continue;
+            try {
+                long   tid = Long.parseLong(kv[0].replaceAll("\"", "").trim());
+                String tid2 = kv[1].replaceAll("\"", "").trim();
+                m.put(tid, tid2);
+            } catch (NumberFormatException ignored) {}
+        }
+        return m;
+    }
+
     // ── 내부 변환 ────────────────────────────────────────────────────────────
 
     private Map<String, Object> toMap(ThreadInfo ti, boolean cpuOk, boolean timingOk, int maxFrames) {
@@ -257,6 +303,18 @@ public class AgentThreadCollector {
             MBeanServer mbs = ManagementFactory.getPlatformMBeanServer();
             ObjectName pattern = new ObjectName("Catalina:type=RequestProcessor,*");
             Set<ObjectName> names = mbs.queryNames(pattern, null);
+
+            // 스레드 이름 → traceId 역매핑 (ThreadId 대신 이름 기반)
+            Map<Long,   String> traceByTid  = readLocalTraceRegistry();
+            Map<String, String> traceByName = new HashMap<>();
+            ThreadInfo[] allTi = ManagementFactory.getThreadMXBean()
+                .getThreadInfo(ManagementFactory.getThreadMXBean().getAllThreadIds(), 0);
+            for (ThreadInfo ti : allTi) {
+                if (ti == null) continue;
+                String tr = traceByTid.get(ti.getThreadId());
+                if (tr != null) traceByName.put(ti.getThreadName(), tr);
+            }
+
             for (ObjectName on : names) {
                 try {
                     Map<String, Object> r = new LinkedHashMap<>();
@@ -268,6 +326,10 @@ public class AgentThreadCollector {
                         if (nameKey != null) threadName = nameKey;
                     }
                     r.put("worker", threadName);
+
+                    // traceId 연결
+                    String traceId = traceByName.get(threadName);
+                    if (traceId != null) r.put("traceId", traceId);
 
                     r.put("stage",        safeAttr(mbs, on, "stage", -1));
                     r.put("currentUri",   safeAttr(mbs, on, "currentUri", ""));

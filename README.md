@@ -1,7 +1,7 @@
-# Java APM Dashboard v1.9.0
+# Java APM Dashboard v1.10.0
 
 Java 프로세스를 위한 **경량 APM(Application Performance Monitor)**.  
-외부 라이브러리 없이 순수 JDK만으로 동작하며, 실시간 대시보드에서 JVM 상태, 스레드 심층 분석, Thread Dump, DB 커넥션 풀, HTTP 요청 처리 현황 (스레드명·개별/평균 처리시간), CPU 처리시간 Top 10, HTTP 요청 로그 파일을 제공합니다.
+외부 라이브러리 없이 순수 JDK만으로 동작하며, 실시간 대시보드에서 JVM 상태, 스레드 심층 분석, Thread Dump, DB 커넥션 풀, HTTP 요청 처리 현황 (스레드명·개별/평균 처리시간·**Trace ID**), CPU 처리시간 Top 10, HTTP 요청 로그 파일을 제공합니다.
 
 ---
 
@@ -12,7 +12,8 @@ Java 프로세스를 위한 **경량 APM(Application Performance Monitor)**.
 | **JVM 메트릭** | Heap/Non-Heap, GC, CPU, Metaspace, Buffer Pool, JIT |
 | **스레드 심층 분석** | 상태 필터/이름 검색, 전체 스택 트레이스 모달, 실시간 Live Stack 뷰, Thread Dump 뷰어(다운로드), 데드락 감지 |
 | **CPU 처리시간 Top 10** | Agent 연결 시 CPU 누적 시간 상위 10 스레드 — 전체 스택 트레이스 인라인 표시 |
-| **HTTP 요청 처리** | Tomcat RequestProcessor — Method·URI·Remote IP·**스레드명**·**개별 처리시간**·**평균 처리시간** 표시, 행 클릭 시 스레드 상세·스택 트레이스 모달, 요청 내역 로그파일(`logs/http-requests.log`) 자동 기록 |
+| **HTTP 요청 처리** | Tomcat RequestProcessor — Method·URI·Remote IP·**스레드명**·**개별 처리시간**·**평균 처리시간**·**Trace ID** 표시, 행 클릭 시 스레드 상세·스택 트레이스 모달, 요청 내역 로그파일(`logs/http-requests.log`) 자동 기록 |
+| **Trace ID 연동** | W3C `traceparent`, Datadog, Zipkin B3, AWS X-Ray 등 주요 헤더 자동 추출 — 없으면 128-bit ID 자동 생성. HTML 주입(`<meta>`+`window.__APM_TRACE_ID`) 및 스레드/요청 테이블 배지 표시 |
 | **DB 커넥션 풀** | HikariCP, Tomcat JDBC, DBCP2 자동 감지 — Active/Idle/Max/대기 스레드 |
 | **원격 JVM (JMX)** | JMX RMI로 Tomcat / Spring Boot 등 외부 JVM 모니터링 |
 | **Agent Library** | `-javaagent:` 부착으로 JMX 없이 HTTP 기반 스레드 모니터링 |
@@ -461,6 +462,20 @@ v1.9.0-agent.jar 이상을 사용하면 이 오류가 발생하지 않습니다.
 ---
 
 ## 릴리즈 노트
+
+### v1.10.0
+- **Trace ID 연동** (`TraceIdFilter` + `TraceRegistry`)
+  - W3C `traceparent`, Datadog `x-datadog-trace-id`, Zipkin B3, AWS X-Ray 등 주요 트레이스 헤더 자동 추출
+  - 수신 헤더 없으면 128-bit UUID 형식 ID 자동 생성
+  - Response header `X-Trace-Id` / `X-B3-TraceId` 자동 추가
+  - HTML 응답에 `<meta name="trace-id">` + `window.__APM_TRACE_ID` 주입 (Datadog 방식)
+  - JMX MBean (`TraceRegistry`: DynamicMBean) 을 통한 크로스 클래스로더 IPC
+  - 대시보드 HTTP 요청 테이블에 **Trace ID 컬럼** 추가 (앞 8자리 녹색 배지)
+  - 스레드 목록에도 활성 요청 스레드의 traceId 배지 표시
+  - 요청 상세 모달에 전체 traceId 표시
+  - 연동 매뉴얼: [`docs/trace-id-guide.md`](docs/trace-id-guide.md) (Tomcat, Spring Boot, Quarkus, WildFly)
+- **CPU Top 10 섹션 독립 갱신** — Agent 스레드 타이머와 분리된 전용 주기 설정 및 ⟳ 즉시 갱신
+- **CPU Top 10 필터·검색** — 상태별 필터 버튼 + 이름 검색 (클라이언트 캐시 기반)
 
 ### v1.9.0
 - **Agent 섹션 JMX 완전 동등화**
