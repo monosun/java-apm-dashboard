@@ -3,8 +3,8 @@ package com.monosun.monitor.integration.jaxrs;
 import com.monosun.monitor.core.Span;
 import com.monosun.monitor.core.TraceContext;
 import com.monosun.monitor.core.TransactionTracer;
-import jakarta.ws.rs.container.*;
-import jakarta.ws.rs.ext.Provider;
+import javax.ws.rs.container.*;
+import javax.ws.rs.ext.Provider;
 
 import java.io.IOException;
 

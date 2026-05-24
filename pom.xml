@@ -17,19 +17,19 @@
     </properties>
 
     <dependencies>
-        <!-- Servlet 통합용 (Tomcat, Jetty, WildFly 등) -->
+        <!-- Servlet 통합용 — javax.servlet (Tomcat 9.x / Servlet 4.0 / Spring Boot 2.x) -->
         <dependency>
-            <groupId>jakarta.servlet</groupId>
-            <artifactId>jakarta.servlet-api</artifactId>
-            <version>6.0.0</version>
+            <groupId>javax.servlet</groupId>
+            <artifactId>javax.servlet-api</artifactId>
+            <version>4.0.1</version>
             <scope>provided</scope>
         </dependency>
 
-        <!-- JAX-RS 통합용 (Jersey, RESTEasy, Quarkus REST 등) -->
+        <!-- JAX-RS 통합용 (Jersey, RESTEasy 등) -->
         <dependency>
-            <groupId>jakarta.ws.rs</groupId>
-            <artifactId>jakarta.ws.rs-api</artifactId>
-            <version>3.1.0</version>
+            <groupId>javax.ws.rs</groupId>
+            <artifactId>javax.ws.rs-api</artifactId>
+            <version>2.1.1</version>
             <scope>provided</scope>
         </dependency>
     </dependencies>
