@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================
-#  startup.sh  —  Java APM Dashboard v1.6.0  백그라운드 시작
+#  startup.sh  —  Java APM Dashboard v1.11.0  백그라운드 시작
 #
 #  사용법:
 #    ./startup.sh              기본 포트 9090 으로 시작
@@ -44,8 +44,8 @@ error() { echo -e "${RED}[오류]${NC} $*" >&2; }
 
 echo ""
 echo " ╔════════════════════════════════════════════╗"
-echo " ║   Java APM Dashboard v1.6.0  |  시작      ║"
-echo " ║   Dashboard : $DASHBOARD"
+echo " ║  Java APM Dashboard v1.11.0  |  시작      ║"
+echo " ║  Dashboard : $DASHBOARD"
 echo " ╚════════════════════════════════════════════╝"
 echo ""
 
@@ -64,7 +64,7 @@ if [[ -f "$PID_FILE" ]]; then
     EXISTING_PID=$(cat "$PID_FILE")
     if kill -0 "$EXISTING_PID" 2>/dev/null; then
         warn "이미 실행 중입니다. PID: $EXISTING_PID"
-        warn "종료하려면: ./shutdown.sh"
+        warn "종료하려면: ./bin/shutdown.sh"
         exit 0
     fi
     info "오래된 PID 파일 삭제 (PID: $EXISTING_PID 는 종료됨)"

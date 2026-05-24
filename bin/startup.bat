@@ -2,7 +2,7 @@
 setlocal EnableDelayedExpansion
 
 :: ============================================================
-::  startup.bat -- Java APM Dashboard v1.6.0
+::  startup.bat -- Java APM Dashboard v1.11.0
 ::
 ::  Steps:
 ::    1. Prevent duplicate launch (PID file check)
@@ -27,7 +27,7 @@ if exist "D:\jdk\openjdk\jdk-21.0.8\bin\java.exe" (
 
 echo.
 echo  =============================================
-echo   Java APM Dashboard v1.6.0  ^|  Start
+echo   Java APM Dashboard v1.11.0  ^|  Start
 echo   Dashboard : %DASHBOARD%
 echo  =============================================
 echo.
@@ -41,7 +41,7 @@ if exist "%PID_FILE%" (
     wmic process where "processid='!EXISTING_PID!'" get processid >nul 2>&1
     if not errorlevel 1 (
         echo [WARN] Already running. PID: !EXISTING_PID!
-        echo [WARN] Run shutdown.bat to stop.
+        echo [WARN] Run bin\shutdown.bat to stop.
         echo.
         pause
         exit /b 0
@@ -56,7 +56,7 @@ for %%f in ("%PROJECT_DIR%\target\java-monitor-*.jar") do (
 )
 
 if not defined JAR (
-    echo [ERROR] No JAR found. Run scripts\build.bat first.
+    echo [ERROR] No JAR found. Run bin\build.bat first.
     echo.
     pause
     exit /b 1

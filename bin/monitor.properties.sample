@@ -1,0 +1,117 @@
+# ============================================================
+#  Java APM Dashboard v1.11.0 — 설정 샘플 파일
+# ============================================================
+#
+#  [사용 방법]
+#  이 파일을 복사하여 JAR 파일과 같은 디렉터리에
+#  monitor.properties 로 저장하면 자동으로 적용됩니다.
+#
+#    java-monitor-1.11.0.jar
+#    monitor.properties        ← 이 파일 (복사 후 이름 변경)
+#
+#  또는 bin/ 디렉터리의 monitor.properties 를 직접 수정하세요.
+#  bin/startup.bat|startup.sh 는 bin/logging.properties 를 자동 참조합니다.
+#
+#  특정 경로를 직접 지정할 수도 있습니다:
+#    java -jar java-monitor-1.11.0.jar /etc/monitor/prod.properties
+#
+#  [적용 우선순위]  낮음 ─────────────────────── 높음
+#    JAR 내 기본값  →  이 파일(외부)  →  -D 시스템 속성
+#
+#  [시스템 속성 덮어쓰기 예시]
+#    java -Dserver.http.port=8080 -Dagent.enabled=true \
+#         -jar java-monitor-1.11.0.jar
+# ============================================================
+
+
+# ============================================================
+#  [1] HTTP 서버 설정 (server.*)
+# ============================================================
+
+# 대시보드·API·Prometheus scrape 요청을 받는 HTTP 포트
+# 기본값: 9090
+server.http.port=9090
+
+# JVM 스냅샷을 콘솔에 출력하는 주기 (초), 0 = 비활성
+# 기본값: 15
+server.print.interval.sec=15
+
+# 트랜잭션 스팬을 보관하는 링 버퍼 크기 (최근 N건)
+# 기본값: 1000
+server.span.buffer.size=1000
+
+
+# ============================================================
+#  [2] Agent HTTP 모니터링 (agent.*)
+# ============================================================
+#
+#  대상 JVM 시작 시:
+#    java -javaagent:java-monitor-1.11.0-agent.jar=port=7979 -jar myapp.jar
+#
+#  Agent 노출 엔드포인트 (대상 JVM):
+#    GET http://<agent.host>:<agent.port>/agent/threads
+#    GET http://<agent.host>:<agent.port>/agent/jvm
+#    GET http://<agent.host>:<agent.port>/agent/threaddump
+#    GET http://<agent.host>:<agent.port>/agent/top10
+#    GET http://<agent.host>:<agent.port>/agent/deadlocks
+# ============================================================
+
+# true 로 변경하면 Agent HTTP 수집을 시작합니다
+# 기본값: false
+agent.enabled=false
+
+# ThreadMonitorAgent 가 실행 중인 대상 JVM의 호스트명 또는 IP
+# 기본값: localhost
+agent.host=localhost
+
+# ThreadMonitorAgent HTTP 서버 포트 (-javaagent 인수의 port= 값과 동일하게 설정)
+# 기본값: 7979
+agent.port=7979
+
+# Agent 에서 스레드 목록·JVM 메트릭을 수집하는 주기 (초)
+# 기본값: 5
+agent.poll.interval.sec=5
+
+
+# ============================================================
+#  [3] 경고 임계치 설정 (alert.*)
+# ============================================================
+
+# Heap 사용률(%) 임계치 — 초과 시 WARN 출력
+# 기본값: 85
+alert.heap.percent=85
+
+# 프로세스 CPU 사용률(%) 임계치 — 초과 시 WARN 출력
+# 기본값: 80
+alert.cpu.percent=80
+
+# 트랜잭션 스팬 오류율(%) 임계치
+# 기본값: 10
+alert.error.rate.percent=10
+
+
+# ============================================================
+#  [환경별 설정 예시]
+# ============================================================
+
+# ── 개발(dev) 환경 ───────────────────────────────────────────
+# server.print.interval.sec=5
+# server.span.buffer.size=200
+# alert.heap.percent=95
+# alert.error.rate.percent=50
+
+# ── 스테이징(staging) 환경 ──────────────────────────────────
+# agent.enabled=true
+# agent.host=staging-app-01
+# agent.port=7979
+# server.print.interval.sec=30
+
+# ── 운영(prod) 환경 ─────────────────────────────────────────
+# server.print.interval.sec=60
+# server.span.buffer.size=5000
+# agent.enabled=true
+# agent.host=prod-app-01
+# agent.port=7979
+# alert.heap.percent=80
+# alert.cpu.percent=70
+# alert.error.rate.percent=5

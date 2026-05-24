@@ -1,10 +1,10 @@
-# Java APM Dashboard v1.5.0 — 아키텍처
+# Java APM Dashboard v1.11.0 — 아키텍처
 
 ## 1. 전체 구성도
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────┐
-│                         Java APM Dashboard v1.5.0                          │
+│                         Java APM Dashboard v1.11.0                          │
 │                                                                             │
 │  ┌──────────────────┐                                                       │
 │  │  monitor.props   │  우선순위: 시스템 속성 > 외부 파일 > 클래스패스 기본값   │
@@ -351,9 +351,17 @@ agent.poll.interval.sec=5
 ### 대시보드 실행
 
 ```bash
-java -jar java-monitor-1.5.0.jar
+# 원클릭 실행 (Windows)
+bin\start.bat
+
+# 백그라운드 실행
+bin\startup.bat          # Windows
+./bin/startup.sh         # Linux/macOS
+
+# 직접 실행
+java -jar java-monitor-1.11.0.jar
 # 또는 설정 파일 직접 지정
-java -jar java-monitor-1.5.0.jar /etc/myconfig/monitor.properties
+java -jar java-monitor-1.11.0.jar /etc/myconfig/monitor.properties
 ```
 
 대시보드: **http://localhost:9090/dashboard**

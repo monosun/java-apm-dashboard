@@ -13,7 +13,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-TARGET_JAR="$PROJECT_DIR/target/java-monitor-1.0.0.jar"
+TARGET_JAR="$PROJECT_DIR/target/java-monitor-1.11.0.jar"
 MAIN_CLASS="com.monosun.monitor.demo.MonitoringDemo"
 SRC_DIR="$PROJECT_DIR/src/main/java"
 CLASS_DIR="$PROJECT_DIR/target/classes"
@@ -41,7 +41,7 @@ error() { echo -e "${RED}[오류]${NC} $*" >&2; }
 
 echo ""
 echo " ╔══════════════════════════════════════╗"
-echo " ║   Java Performance Monitor v1.0.0   ║"
+echo " ║  Java Performance Monitor v1.11.0   ║"
 echo " ╚══════════════════════════════════════╝"
 echo ""
 
@@ -78,7 +78,7 @@ do_run_jar() {
         exit 1
     fi
     info "JAR 모드로 시작합니다..."
-    info "메트릭 서버: http://localhost:9090/metrics"
+    info "대시보드: http://localhost:9090/dashboard"
     info "Ctrl+C 로 종료"
     echo ""
 
@@ -115,7 +115,7 @@ do_dev_compile() {
 do_dev() {
     do_dev_compile
     info "클래스 모드로 시작합니다..."
-    info "메트릭 서버: http://localhost:9090/metrics"
+    info "대시보드: http://localhost:9090/dashboard"
     info "Ctrl+C 로 종료"
     echo ""
 

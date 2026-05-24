@@ -2,7 +2,7 @@
 setlocal EnableDelayedExpansion
 
 :: ============================================================
-::  shutdown.bat -- Java APM Dashboard v1.6.0
+::  shutdown.bat -- Java APM Dashboard v1.11.0
 ::
 ::  Steps:
 ::    1. Health check -- skip if server already down
@@ -20,7 +20,7 @@ set "PORT=9090"
 
 echo.
 echo  =============================================
-echo   Java APM Dashboard v1.6.0  ^|  Shutdown
+echo   Java APM Dashboard v1.11.0  ^|  Shutdown
 echo  =============================================
 echo.
 

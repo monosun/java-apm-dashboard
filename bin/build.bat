@@ -8,7 +8,8 @@ setlocal
 
 set "JAVA_HOME=D:\jdk\openjdk\jdk-21.0.8"
 set "MVN=D:\programs\apache-maven-3.9.9\bin\mvn.cmd"
-set "PROJECT_DIR=%~dp0.."
+set "SCRIPT_DIR=%~dp0"
+set "PROJECT_DIR=%SCRIPT_DIR%.."
 
 if "%1"=="clean" (
     echo [BUILD] 클린 후 빌드...

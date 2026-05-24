@@ -4,11 +4,12 @@ setlocal
 set "JAVA=D:\jdk\openjdk\jdk-21.0.8\bin\java.exe"
 set "MVN=D:\programs\apache-maven-3.9.9\bin\mvn.cmd"
 set "SCRIPT_DIR=%~dp0"
+set "PROJECT_DIR=%SCRIPT_DIR%.."
 set "DASHBOARD=http://localhost:9090/dashboard"
 
 echo.
 echo  =============================================
-echo   Java APM Dashboard v1.6.0
+echo   Java APM Dashboard v1.11.0
 echo   Dashboard: %DASHBOARD%
 echo  =============================================
 echo.
@@ -23,10 +24,10 @@ if not exist "%JAVA%" (
     set "JAVA=java"
 )
 
-:: JAR 찾기 (최신 버전 자동 선택)
+:: JAR 찾기 (original / agent / integration 제외)
 set "JAR="
-for %%f in ("%SCRIPT_DIR%target\java-monitor-*.jar") do (
-    echo %%f | findstr /i "original shaded" >nul || set "JAR=%%f"
+for %%f in ("%PROJECT_DIR%\target\java-monitor-*.jar") do (
+    echo %%f | findstr /i "original agent integration" >nul || set "JAR=%%f"
 )
 
 :: JAR 없으면 빌드
@@ -36,10 +37,10 @@ if not defined JAR (
         echo [ERROR] Maven을 찾을 수 없습니다: %MVN%
         pause & exit /b 1
     )
-    call "%MVN%" -f "%SCRIPT_DIR%pom.xml" package -q
+    call "%MVN%" -f "%PROJECT_DIR%\pom.xml" package -q
     if %ERRORLEVEL% NEQ 0 ( echo [ERROR] 빌드 실패 & pause & exit /b 1 )
-    for %%f in ("%SCRIPT_DIR%target\java-monitor-*.jar") do (
-        echo %%f | findstr /i "original shaded" >nul || set "JAR=%%f"
+    for %%f in ("%PROJECT_DIR%\target\java-monitor-*.jar") do (
+        echo %%f | findstr /i "original agent integration" >nul || set "JAR=%%f"
     )
 )
 
@@ -50,6 +51,7 @@ start "" /B cmd /C "timeout /T 3 /NOBREAK >nul && start %DASHBOARD%"
 echo [INFO] Ctrl+C 로 종료합니다.
 echo.
 "%JAVA%" -Xms256m -Xmx512m -XX:+UseG1GC ^
+         -Djava.util.logging.config.file="%SCRIPT_DIR%logging.properties" ^
          -Dserver.http.port=9090 ^
          -jar "%JAR%"
 

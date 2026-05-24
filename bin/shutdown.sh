@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================
-#  shutdown.sh  —  Java APM Dashboard v1.6.0  종료
+#  shutdown.sh  —  Java APM Dashboard v1.11.0  종료
 #
 #  사용법:
 #    ./shutdown.sh              기본 포트 9090
@@ -31,7 +31,7 @@ error() { echo -e "${RED}[오류]${NC} $*" >&2; }
 
 echo ""
 echo " ╔════════════════════════════════════════════╗"
-echo " ║   Java APM Dashboard v1.6.0  |  종료      ║"
+echo " ║  Java APM Dashboard v1.11.0  |  종료      ║"
 echo " ╚════════════════════════════════════════════╝"
 echo ""
 

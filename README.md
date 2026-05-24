@@ -29,7 +29,7 @@ Java 프로세스를 위한 **경량 APM(Application Performance Monitor)**.
 ### 1. 빌드
 
 ```bat
-scripts\build.bat
+bin\build.bat
 :: 또는
 mvn clean package -DskipTests
 ```
@@ -43,17 +43,17 @@ mvn clean package -DskipTests
 
 ```bat
 :: Windows 원클릭 (포그라운드)
-start.bat
+bin\start.bat
 
 :: 백그라운드 시작 / 종료
-scripts\startup.bat
-scripts\shutdown.bat
+bin\startup.bat
+bin\shutdown.bat
 ```
 
 ```bash
 # Linux / macOS 백그라운드 시작 / 종료
-./scripts/startup.sh
-./scripts/shutdown.sh
+./bin/startup.sh
+./bin/shutdown.sh
 ```
 
 ### 3. 대시보드 접속
@@ -64,19 +64,23 @@ http://localhost:9090/dashboard
 
 ---
 
-## scripts/ 디렉토리
+## bin/ 디렉토리
 
 ```
-scripts/
-├── startup.bat      Windows  — 백그라운드 시작, PID 파일 저장, 브라우저 자동 오픈
-├── shutdown.bat     Windows  — PID 파일·wmic·netstat 3단계 탐색 후 종료
-├── startup.sh       Linux/macOS — nohup 백그라운드 시작, 헬스 체크 대기
-├── shutdown.sh      Linux/macOS — SIGTERM → 15초 대기 → SIGKILL graceful 종료
-├── build.bat        Maven 빌드 (clean 옵션 포함)
-├── run.bat          포그라운드 실행 (빌드 + 실행 / 실행만 선택)
-├── run.sh           포그라운드 실행 (Linux/macOS)
-├── deploy.bat       클린 빌드 후 즉시 실행
-└── logging.properties  JUL 로그 설정 (콘솔 + 파일 로테이션)
+bin/
+├── start.bat            Windows  — 원클릭 포그라운드 실행 (JAR 없으면 자동 빌드)
+├── startup.bat          Windows  — 백그라운드 시작, PID 파일 저장, 브라우저 자동 오픈
+├── shutdown.bat         Windows  — PID 파일·wmic·netstat 3단계 탐색 후 종료
+├── stop.bat             Windows  — 빠른 종료 (PID 파일 없이)
+├── startup.sh           Linux/macOS — nohup 백그라운드 시작, 헬스 체크 대기
+├── shutdown.sh          Linux/macOS — SIGTERM → 15초 대기 → SIGKILL graceful 종료
+├── build.bat            Maven 빌드 (clean 옵션 포함)
+├── run.bat              포그라운드 실행 (빌드 + 실행 / 실행만 선택)
+├── run.sh               포그라운드 실행 (Linux/macOS)
+├── deploy.bat           클린 빌드 후 즉시 실행
+├── monitor.properties       실행 시 자동 적용되는 설정 파일
+├── monitor.properties.sample  전체 설정 항목 주석 포함 샘플
+└── logging.properties       JUL 로그 설정 (콘솔 + 파일 로테이션)
 ```
 
 ### startup / shutdown 공통 특징
@@ -92,10 +96,10 @@ scripts/
 
 ```bat
 :: 백그라운드로 서버 시작 (최소화 창, 브라우저 자동 오픈)
-scripts\startup.bat
+bin\startup.bat
 
 :: 서버 종료
-scripts\shutdown.bat
+bin\shutdown.bat
 ```
 
 `startup.bat` 단계:
@@ -116,16 +120,16 @@ scripts\shutdown.bat
 
 ```bash
 # 실행 권한 부여 (최초 1회)
-chmod +x scripts/startup.sh scripts/shutdown.sh
+chmod +x bin/startup.sh bin/shutdown.sh
 
 # 백그라운드로 서버 시작
-./scripts/startup.sh
+./bin/startup.sh
 
 # 포트 지정 시작
-./scripts/startup.sh 8080
+./bin/startup.sh 8080
 
 # 서버 종료
-./scripts/shutdown.sh
+./bin/shutdown.sh
 ```
 
 `startup.sh` 단계:
@@ -304,7 +308,8 @@ public FilterRegistrationBean<TraceIdFilter> traceFilter() {
 
 `traceparent` (W3C) → `x-datadog-trace-id` → `x-b3-traceid` (Zipkin) → `x-trace-id` → `x-request-id` → `x-amzn-trace-id` (AWS X-Ray) → 없으면 128-bit 자동 생성
 
-자세한 내용: [`docs/trace-id-guide.md`](docs/trace-id-guide.md)
+자세한 내용: [`docs/trace-id-guide.md`](docs/trace-id-guide.md)  
+Request 파라미터·헤더 수집: [`docs/trace-id-request-context.md`](docs/trace-id-request-context.md)
 
 ---
 
