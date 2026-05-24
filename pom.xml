@@ -111,6 +111,29 @@
                     </execution>
                 </executions>
             </plugin>
+            <!-- 버전 없는 고정 파일명으로 복사 (배포 스크립트에서 버전 무관하게 참조) -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <version>3.1.0</version>
+                <executions>
+                    <execution>
+                        <id>copy-fixed-name-jars</id>
+                        <phase>package</phase>
+                        <goals><goal>run</goal></goals>
+                        <configuration>
+                            <target>
+                                <copy file="${project.build.directory}/${project.artifactId}-${project.version}-agent.jar"
+                                      tofile="${project.build.directory}/${project.artifactId}-agent.jar"
+                                      overwrite="true"/>
+                                <copy file="${project.build.directory}/${project.artifactId}-${project.version}-integration.jar"
+                                      tofile="${project.build.directory}/${project.artifactId}-integration.jar"
+                                      overwrite="true"/>
+                            </target>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
     </build>
 </project>
