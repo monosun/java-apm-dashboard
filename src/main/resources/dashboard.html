@@ -591,17 +591,19 @@
         <div class="chart-box" style="margin-top:14px">
           <div class="thread-toolbar" style="margin-bottom:8px">
             <span class="chart-title" style="margin:0">활성 HTTP 요청 (Tomcat RequestProcessor)</span>
+            <span id="remote-requests-summary" style="font-size:0.72rem;color:#64748B"></span>
           </div>
           <div class="table-wrap">
             <table>
               <thead><tr>
-                <th>스레드</th><th style="width:75px">Method</th><th>URI</th><th>Remote IP</th>
+                <th>스레드 이름</th><th style="width:75px">Method</th><th>URI</th><th>Remote IP</th>
                 <th style="text-align:right">처리 시간 (ms)</th>
+                <th style="text-align:right">평균 (ms)</th>
                 <th style="text-align:right">누적 요청</th>
                 <th style="text-align:right">오류</th>
               </tr></thead>
               <tbody id="remote-requests-tbody">
-                <tr><td class="no-data" colspan="7">Tomcat 기반 JVM 연결 시 표시됩니다</td></tr>
+                <tr><td class="no-data" colspan="8">Tomcat 기반 JVM 연결 시 표시됩니다</td></tr>
               </tbody>
             </table>
           </div>
@@ -742,6 +744,28 @@
               </tr></thead>
               <tbody id="agent-top10-tbody">
                 <tr><td class="no-data" colspan="7">로딩 중...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- HTTP 요청 처리 현황 (Agent RequestProcessor) -->
+        <div class="chart-box" style="margin-top:14px">
+          <div class="thread-toolbar" style="margin-bottom:8px">
+            <span class="chart-title" style="margin:0">활성 HTTP 요청 (Agent RequestProcessor)</span>
+            <span id="agent-requests-summary" style="font-size:0.72rem;color:#64748B"></span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr>
+                <th>스레드 이름</th><th style="width:75px">Method</th><th>URI</th><th>Remote IP</th>
+                <th style="text-align:right">처리 시간 (ms)</th>
+                <th style="text-align:right">평균 (ms)</th>
+                <th style="text-align:right">누적 요청</th>
+                <th style="text-align:right">오류</th>
+              </tr></thead>
+              <tbody id="agent-requests-tbody">
+                <tr><td class="no-data" colspan="8">Agent 기반 Tomcat JVM 연결 시 표시됩니다</td></tr>
               </tbody>
             </table>
           </div>
@@ -1078,20 +1102,44 @@ function renderLivePanel(panelId, threads, scope){
   const reqMap={};
   for(const r of reqArr){if(r.worker) reqMap[r.worker]=r;}
 
-  body.innerHTML=threads.slice(0,200).map(t=>{
+  // 활성 HTTP 요청 요약 계산
+  const activeHttpReqs=reqArr.filter(r=>r.currentUri);
+  const httpAvgMs=activeHttpReqs.length>0
+    ? Math.round(activeHttpReqs.reduce((s,r)=>s+(Number(r.processingTimeMs)||0),0)/activeHttpReqs.length)
+    : null;
+  const httpSummary=activeHttpReqs.length>0
+    ? `<div style="padding:6px 12px 4px;font-size:0.7rem;color:#7DD3FC;background:#071A2E;border-bottom:1px solid #0C2540;display:flex;gap:16px;flex-wrap:wrap">`
+      + `<span>🌐 활성 HTTP 요청 <strong style="color:#E2E8F0">${activeHttpReqs.length}</strong>건</span>`
+      + `<span>개별 처리시간 최대 <strong style="color:#FCD34D">${Math.max(...activeHttpReqs.map(r=>Number(r.processingTimeMs)||0)).toLocaleString()} ms</strong></span>`
+      + `<span>평균 <strong style="color:#4ADE80">${httpAvgMs!=null?httpAvgMs.toLocaleString():'—'} ms</strong></span>`
+      + `</div>`
+    : '';
+
+  body.innerHTML=httpSummary+threads.slice(0,200).map(t=>{
     const stCls=stateClass(t.state);
     const stack=t.stackTrace||[];
     const frames=stack.slice(0,5).map((f,i)=>`<div class="dump-frame${i===0?' top':''}">\tat ${esc(f)}</div>`).join('');
     const moreBtn=stack.length>5?`<div class="dump-frame load-more" onclick="loadFullStack(this,'${scope}',${t.id})">... ${stack.length-5}개 더 (클릭하여 전체 보기)</div>`:'';
 
-    // 해당 스레드가 HTTP 요청을 처리 중이면 URI · Remote IP 배지 표시
+    // 해당 스레드가 HTTP 요청을 처리 중이면 URI · Remote IP · 처리시간 배지 표시
     const req=reqMap[t.name];
-    const reqBadge=req&&req.currentUri?`<span style="display:inline-flex;align-items:center;gap:4px;font-size:0.67rem;color:#7DD3FC;background:#0C2540;border:1px solid #1E4976;border-radius:4px;padding:1px 7px;margin-left:4px;white-space:nowrap;flex-shrink:0">🌐 <span style="color:#E2E8F0">${esc(req.currentUri)}</span> <span style="color:#64748B">←</span> <span style="color:#94A3B8">${esc(req.remoteAddr||'?')}</span></span>`:'';
+    const ptMs=req&&req.processingTimeMs!=null?Number(req.processingTimeMs):null;
+    const ptLabel=ptMs!=null&&ptMs>0
+      ?`<span style="color:${ptMs>5000?'#F87171':'#FCD34D'};margin-left:4px;font-weight:600">${ptMs.toLocaleString()}ms</span>`
+      :'';
+    const reqBadge=req&&req.currentUri
+      ?`<span style="display:inline-flex;align-items:center;gap:4px;font-size:0.67rem;color:#7DD3FC;background:#0C2540;border:1px solid #1E4976;border-radius:4px;padding:1px 7px;margin-left:4px;white-space:nowrap;flex-shrink:0">🌐 <span style="color:#E2E8F0">${esc(req.currentUri)}</span> <span style="color:#64748B">←</span> <span style="color:#94A3B8">${esc(req.remoteAddr||'?')}</span>${ptLabel}</span>`
+      :'';
+
+    // HTTP 요청 처리 스레드는 이름을 강조 표시
+    const nameHl=req&&req.currentUri
+      ?`<span class="dump-name" style="color:#7DD3FC">${esc(t.name)}</span>`
+      :`<span class="dump-name">${esc(t.name)}</span>`;
 
     return`<div class="dump-entry">
       <div class="dump-thread-hdr" onclick="toggleStack(this)">
         <span class="tb ${stCls}" style="flex-shrink:0">${t.state}</span>
-        <span class="dump-name">${esc(t.name)}</span>
+        ${nameHl}
         <span class="dump-thread-meta">#${t.id}${t.daemon?' d':''} prio=${t.priority??'?'}${t.cpuMs!=null?' cpu='+Number(t.cpuMs).toLocaleString()+'ms':''}</span>
         ${t.lockOwner?`<span style="font-size:0.68rem;color:#F87171">⛔ ${esc(t.lockOwner)}</span>`:''}
         ${reqBadge}
@@ -1383,8 +1431,10 @@ function normalizeIp(ip){
 function renderRequestRows(reqs, tbodyId, histKey){
   const tbody=document.getElementById(tbodyId);
   if(!tbody) return;
+  const summaryEl=document.getElementById(histKey==='remote'?'remote-requests-summary':'agent-requests-summary');
   if(!reqs||reqs.length===0){
-    tbody.innerHTML='<tr><td class="no-data" colspan="7">Tomcat 기반 JVM 연결 시 표시됩니다</td></tr>';
+    tbody.innerHTML='<tr><td class="no-data" colspan="8">Tomcat 기반 JVM 연결 시 표시됩니다</td></tr>';
+    if(summaryEl) summaryEl.textContent='';
     return;
   }
   const hist=requestHistory[histKey];
@@ -1394,6 +1444,17 @@ function renderRequestRows(reqs, tbodyId, histKey){
     if(r.worker && r.currentUri){
       hist[r.worker]={uri:r.currentUri, ip:r.remoteAddr||'', ts:now};
     }
+  }
+
+  // 활성 요청 기준 평균 처리시간 계산
+  const activeReqs=reqs.filter(r=>r.currentUri);
+  const avgMs=activeReqs.length>0
+    ? Math.round(activeReqs.reduce((s,r)=>s+(Number(r.processingTimeMs)||0),0)/activeReqs.length)
+    : null;
+  if(summaryEl){
+    summaryEl.textContent=activeReqs.length>0
+      ? `활성 ${activeReqs.length}건 · 평균 ${avgMs!=null?avgMs.toLocaleString():'—'} ms`
+      : `전체 ${reqs.length}개 워커 (유휴)`;
   }
 
   tbody.innerHTML=reqs.map((r,idx)=>{
@@ -1409,12 +1470,17 @@ function renderRequestRows(reqs, tbodyId, histKey){
     const ptCls=ptMs>5000?'warn':'';
     const method=r.method||'';
     const workerName=r.worker||'—';
+    // 평균 처리시간 — 활성 요청에만 표시
+    const avgCell=active&&avgMs!=null
+      ?`<span style="color:#94A3B8">${avgMs.toLocaleString()}</span>`
+      :'<span style="color:#334155">—</span>';
     return`<tr class="clickable" style="${rowStyle}" onclick="openRequestDetail(${idx},'${histKey}')">
-      <td class="mono" title="${esc(workerName)}" style="max-width:190px;overflow:hidden;text-overflow:ellipsis">${esc(workerName)}</td>
+      <td class="mono" title="${esc(workerName)}" style="max-width:200px;overflow:hidden;text-overflow:ellipsis">${esc(workerName)}</td>
       <td>${method?`<span class="method-badge">${esc(method)}</span>`:'<span style="color:#334155">—</span>'}</td>
       <td class="mono" style="max-width:240px;overflow:hidden;text-overflow:ellipsis">${esc(uri)||'<span style="color:#334155">idle</span>'}${ageLabel}</td>
       <td class="mono">${esc(ip)||'—'}</td>
       <td style="text-align:right"><span class="${ptCls}">${Number(ptMs).toLocaleString()}</span></td>
+      <td style="text-align:right">${avgCell}</td>
       <td style="text-align:right">${r.requestCount??'—'}</td>
       <td style="text-align:right">${r.errorCount??0}</td>
     </tr>`;
@@ -1506,7 +1572,8 @@ function buildRequestDetailHtml(req, thread){
   html+=`</div>`;
 
   html+=`<div style="font-size:0.68rem;color:#334155;margin-top:6px;padding:6px 10px;background:#0A1220;border-radius:4px">
-    ⓘ HTTP 요청 헤더는 JMX를 통해 노출되지 않습니다. 위 정보는 Tomcat RequestProcessor MBean에서 수집됩니다.
+    ⓘ HTTP 요청 헤더(Accept, Authorization 등)는 Tomcat RequestProcessor MBean이 노출하지 않습니다.
+    method · URI · queryString · IP · contentType 등은 <code>logs/http-requests.log</code>에 기록됩니다.
   </div>`;
 
   return html;
@@ -1535,11 +1602,12 @@ async function refreshRequests(){
         renderRequestRows(reqs,'remote-requests-tbody','remote');
       }catch(_){requestData.remote=[];}
     }
-    // agent 요청 데이터 수집 및 캐시 (스택 트레이스 뷰 연동용)
+    // agent 요청 데이터 수집, 캐시 및 테이블 렌더링
     if(agentConnected){
       try{
         const ar=await fetch('/agent/requests').then(r=>r.json());
         requestData.agent=ar||[];
+        renderRequestRows(ar,'agent-requests-tbody','agent');
       }catch(_){requestData.agent=[];}
     }
   }catch(_){}

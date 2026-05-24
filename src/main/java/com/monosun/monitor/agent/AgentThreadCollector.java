@@ -1,5 +1,6 @@
 package com.monosun.monitor.agent;
 
+import com.monosun.monitor.core.RequestLogger;
 import javax.management.*;
 import java.lang.management.*;
 import java.time.Instant;
@@ -11,7 +12,8 @@ import java.util.*;
  */
 public class AgentThreadCollector {
 
-    private final ThreadMXBean threadMX = ManagementFactory.getThreadMXBean();
+    private final ThreadMXBean threadMX    = ManagementFactory.getThreadMXBean();
+    private final RequestLogger requestLogger = new RequestLogger("agent");
 
     public AgentThreadCollector() {
         if (threadMX.isThreadContentionMonitoringSupported()) {
@@ -294,6 +296,22 @@ public class AgentThreadCollector {
                 long tb = b.get("processingTimeMs") instanceof Number ? ((Number)b.get("processingTimeMs")).longValue() : 0;
                 return Long.compare(tb, ta);
             });
+
+            // 평균 처리시간 계산 (활성 요청만 포함)
+            long activeCount = result.stream()
+                .filter(r -> !String.valueOf(r.getOrDefault("currentUri", "")).isEmpty())
+                .count();
+            if (activeCount > 0) {
+                long sumMs = result.stream()
+                    .filter(r -> !String.valueOf(r.getOrDefault("currentUri", "")).isEmpty())
+                    .mapToLong(r -> r.get("processingTimeMs") instanceof Number
+                        ? ((Number) r.get("processingTimeMs")).longValue() : 0L)
+                    .filter(v -> v >= 0)
+                    .sum();
+                result.forEach(r -> r.put("avgProcessingTimeMs", sumMs / activeCount));
+            }
+
+            requestLogger.logIfNew(result);
         } catch (Exception e) {
             // Tomcat 없는 환경에서는 빈 목록 반환
         }

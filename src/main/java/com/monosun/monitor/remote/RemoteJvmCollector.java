@@ -1,5 +1,6 @@
 package com.monosun.monitor.remote;
 
+import com.monosun.monitor.core.RequestLogger;
 import javax.management.*;
 import javax.management.remote.*;
 import java.io.IOException;
@@ -29,6 +30,8 @@ public class RemoteJvmCollector implements AutoCloseable {
 
     private static final Logger LOG = Logger.getLogger(RemoteJvmCollector.class.getName());
     private static final ObjectName OS_OBJECT_NAME;
+
+    private final RequestLogger requestLogger = new RequestLogger("jmx");
 
     static {
         try { OS_OBJECT_NAME = new ObjectName("java.lang:type=OperatingSystem"); }
@@ -395,6 +398,21 @@ public class RemoteJvmCollector implements AutoCloseable {
                 long tb = toLong(b.get("processingTimeMs"));
                 return Long.compare(tb, ta);
             });
+
+            // 평균 처리시간 계산 (활성 요청만 포함)
+            long activeCount = result.stream()
+                .filter(r -> !String.valueOf(r.getOrDefault("currentUri", "")).isEmpty())
+                .count();
+            if (activeCount > 0) {
+                long sumMs = result.stream()
+                    .filter(r -> !String.valueOf(r.getOrDefault("currentUri", "")).isEmpty())
+                    .mapToLong(r -> toLong(r.get("processingTimeMs")))
+                    .filter(v -> v >= 0)
+                    .sum();
+                result.forEach(r -> r.put("avgProcessingTimeMs", sumMs / activeCount));
+            }
+
+            requestLogger.logIfNew(result);
         } catch (Exception e) {
             LOG.fine("[RemoteJvmCollector] RequestProcessor 수집 오류: " + e.getMessage());
         }
