@@ -474,173 +474,7 @@
     </div>
   </div>
 
-  <!-- ══════════════════ [2] 모니터링 대상 (JMX) ══════════════════ -->
-  <div style="margin-bottom:32px" id="jmx-section">
-    <div class="section-hd">
-      <h2>모니터링 대상 (JMX)</h2>
-      <span class="section-badge" id="targets-badge">로딩 중...</span>
-      <button class="section-toggle" id="jmx-toggle-btn" onclick="toggleSection('jmx-section','jmx-toggle-btn')">▼ 숨기기</button>
-    </div>
-
-    <div id="target-connected" style="display:none">
-      <div class="target-card">
-        <div class="target-header">
-          <span class="target-name" id="t-name">원격 JVM</span>
-          <span class="conn-badge conn-on" id="t-conn-badge">연결됨</span>
-          <span class="target-url"  id="t-url"></span>
-        </div>
-
-        <div class="cards">
-          <div class="card hi-blue">
-            <div class="card-label">Heap</div>
-            <div class="card-value" id="t-heap-pct">—</div>
-            <div class="card-sub"  id="t-heap-mb">—</div>
-          </div>
-          <div class="card hi-orange">
-            <div class="card-label">CPU (프로세스)</div>
-            <div class="card-value" id="t-cpu">—</div>
-            <div class="card-sub"  id="t-cpu-sys">시스템: —</div>
-          </div>
-          <div class="card hi-green">
-            <div class="card-label">스레드</div>
-            <div class="card-value" id="t-threads">—</div>
-            <div class="card-sub"  id="t-threads-sub">—</div>
-          </div>
-          <div class="card hi-red">
-            <div class="card-label">BLOCKED</div>
-            <div class="card-value" id="t-blocked">—</div>
-            <div class="card-sub">스레드</div>
-          </div>
-          <div class="card hi-yellow">
-            <div class="card-label">WAITING</div>
-            <div class="card-value" id="t-waiting">—</div>
-            <div class="card-sub">스레드</div>
-          </div>
-          <div class="card hi-purple">
-            <div class="card-label">TIMED_WAIT</div>
-            <div class="card-value" id="t-timed">—</div>
-            <div class="card-sub">스레드</div>
-          </div>
-          <div class="card">
-            <div class="card-label">GC 횟수</div>
-            <div class="card-value" id="t-gc">—</div>
-            <div class="card-sub"  id="t-gc-t">—</div>
-          </div>
-          <div class="card">
-            <div class="card-label">OS 여유 메모리</div>
-            <div class="card-value" id="t-os-free">—</div>
-            <div class="card-sub"  id="t-os-total">전체: —</div>
-          </div>
-          <div class="card">
-            <div class="card-label">업타임</div>
-            <div class="card-value" id="t-uptime">—</div>
-            <div class="card-sub"  id="t-jvm">—</div>
-          </div>
-        </div>
-
-        <div class="charts-row charts-2" style="margin-bottom:14px">
-          <div class="chart-box">
-            <div class="chart-title">Heap 추이 (%)</div>
-            <div class="chart-wrap h160"><canvas id="tHeapChart"></canvas></div>
-          </div>
-          <div class="chart-box">
-            <div class="chart-title">CPU 추이 (%)</div>
-            <div class="chart-wrap h160"><canvas id="tCpuChart"></canvas></div>
-          </div>
-        </div>
-
-        <!-- Remote Thread Table -->
-        <div class="chart-box" style="border:none;background:transparent;padding:0">
-          <div class="thread-toolbar">
-            <div class="thread-toolbar-left">
-              <span class="chart-title" style="margin:0">대상 스레드</span>
-              <div class="filter-btns">
-                <button class="fbtn fbtn-all active" onclick="setFilter('target','ALL',this)">ALL</button>
-                <button class="fbtn fbtn-blocked"  onclick="setFilter('target','BLOCKED',this)">BLOCKED</button>
-                <button class="fbtn fbtn-waiting"  onclick="setFilter('target','WAITING',this)">WAITING</button>
-                <button class="fbtn fbtn-timed"    onclick="setFilter('target','TIMED_WAITING',this)">TIMED</button>
-                <button class="fbtn fbtn-runnable" onclick="setFilter('target','RUNNABLE',this)">RUNNABLE</button>
-              </div>
-              <input class="thread-search" type="text" placeholder="스레드 이름 검색..." oninput="setSearch('target',this.value)">
-              <div class="pills" id="target-thread-pills"></div>
-            </div>
-            <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-              <select id="remote-refresh-sel" class="refresh-sel"
-                      onchange="setRemoteRefreshInterval(+this.value)" title="자동 갱신 주기">
-                <option value="1">1초</option>
-                <option value="3">3초</option>
-                <option value="5" selected>5초</option>
-                <option value="10">10초</option>
-                <option value="30">30초</option>
-              </select>
-              <button class="btn btn-sm" onclick="triggerRemoteRefresh()" title="지금 갱신">⟳ 지금 갱신</button>
-              <button class="btn btn-sm" onclick="openDump('remote')">Thread Dump</button>
-            </div>
-          </div>
-          <div class="table-wrap">
-            <table>
-              <thead><tr>
-                <th style="width:115px">상태</th>
-                <th>스레드 이름</th>
-                <th style="width:90px;text-align:right">CPU (ms)</th>
-                <th>대기 / 잠금</th>
-                <th>최상위 스택</th>
-              </tr></thead>
-              <tbody id="target-thread-tbody">
-                <tr><td class="no-data" colspan="5">로딩 중...</td></tr>
-              </tbody>
-            </table>
-          </div>
-
-          <!-- Live dump panel (Remote) -->
-          <div class="dump-panel" style="margin-top:12px">
-            <div class="dump-panel-hd" onclick="toggleDumpPanel('remote-live-body',this)">
-              <span>실시간 스택 트레이스 뷰 (JMX)</span>
-              <span style="font-size:0.72rem;color:#475569" id="remote-live-toggle-label">▼ 펼치기</span>
-            </div>
-            <div class="dump-panel-body" id="remote-live-body"></div>
-          </div>
-        </div>
-
-        <!-- HTTP 요청 처리 현황 (Tomcat/Spring Boot) -->
-        <div class="chart-box" style="margin-top:14px">
-          <div class="thread-toolbar" style="margin-bottom:8px">
-            <span class="chart-title" style="margin:0">활성 HTTP 요청 (Tomcat RequestProcessor)</span>
-            <span id="remote-requests-summary" style="font-size:0.72rem;color:#64748B"></span>
-          </div>
-          <div class="table-wrap">
-            <table>
-              <thead><tr>
-                <th>스레드 이름</th><th style="width:75px">Method</th><th>URI</th><th>Remote IP</th>
-                <th style="text-align:right">처리 시간 (ms)</th>
-                <th style="text-align:right">평균 (ms)</th>
-                <th style="text-align:right">누적 요청</th>
-                <th style="text-align:right">오류</th>
-                <th style="width:100px">Trace ID</th>
-              </tr></thead>
-              <tbody id="remote-requests-tbody">
-                <tr><td class="no-data" colspan="9">Tomcat 기반 JVM 연결 시 표시됩니다</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div id="target-placeholder" class="placeholder">
-      <h3>모니터링 대상 미설정</h3>
-      <p style="margin-bottom:12px;font-size:0.85rem">
-        <code>monitor.properties</code>에 JMX 대상을 설정하면 Tomcat / Spring Boot 등의 JVM을 여기서 모니터링합니다.
-      </p>
-      <p style="font-size:0.8rem;color:#334155">
-        <code>remote.jmx.enabled=true</code>&nbsp;&nbsp;
-        <code>remote.jmx.host=&lt;HOST&gt;</code>&nbsp;&nbsp;
-        <code>remote.jmx.port=9999</code>
-      </p>
-    </div>
-  </div>
-
-  <!-- ══════════════════ [3] Agent 연결 대상 ══════════════════ -->
+  <!-- ══════════════════ [2] Agent 연결 대상 ══════════════════ -->
   <div style="margin-bottom:32px" id="agent-section">
     <div class="section-hd">
       <h2>Agent 연결 대상</h2>
@@ -894,22 +728,20 @@
 const HIST = 60;
 const labels = [];
 const hHeap=[], hCpu=[], hGc=[], hRunnable=[], hBlocked=[], hWaiting=[], hTimed=[];
-const tHeapH=[], tCpuH=[];
 const agHeapH=[], agCpuH=[];
 
-let remoteConnected = false;
 let agentConnected  = false;
 
 // Thread data cache
-const threadData = { apm: [], target: [], agent: [] };
-const threadFilter = { apm: 'ALL', target: 'ALL', agent: 'ALL' };
-const threadSearch = { apm: '', target: '', agent: '' };
+const threadData = { apm: [], agent: [] };
+const threadFilter = { apm: 'ALL', agent: 'ALL' };
+const threadSearch = { apm: '', agent: '' };
 
 // Tomcat RequestProcessor cache (workerThreadName → request info)
-const requestData = { remote: [], agent: [] };
+const requestData = { agent: [] };
 
-// Last-seen URI/IP per worker: { remote: { workerName: {uri,ip,ts} }, agent: {...} }
-const requestHistory = { remote: {}, agent: {} };
+// Last-seen URI/IP per worker: { agent: {...} }
+const requestHistory = { agent: {} };
 
 // Modal state
 let currentDumpText = '';
@@ -945,8 +777,6 @@ const gcChart    = mkChart('gcChart',    [ds('GC 횟수','#8B5CF6',true)]);
 const tsChart    = mkChart('threadStateChart',[
   ds('RUNNABLE','#4ADE80',false), ds('TIMED_WAIT','#A78BFA',false),
   ds('WAITING','#FCD34D',false),  ds('BLOCKED','#F87171',false)]);
-const tHeapChart  = mkChart('tHeapChart',  [ds('Heap %','#38BDF8',true)]);
-const tCpuChart   = mkChart('tCpuChart',   [ds('CPU %', '#FB923C',true)]);
 const agHeapChart = mkChart('agHeapChart', [ds('Heap %','#818CF8',true)]);
 const agCpuChart  = mkChart('agCpuChart',  [ds('CPU %', '#34D399',true)]);
 
@@ -1013,65 +843,6 @@ async function refreshApmThreads(){
   }catch(_){}
 }
 
-
-// ── Remote JMX ────────────────────────────────────────────────────────────────
-async function refreshRemote(){
-  try{
-    const status=await fetch('/remote/status').then(r=>r.json());
-    const placeholder=document.getElementById('target-placeholder');
-    const connected=document.getElementById('target-connected');
-    const badge=document.getElementById('targets-badge');
-    if(!status.target){
-      placeholder.style.display=''; connected.style.display='none';
-      badge.className='section-badge badge-off'; badge.textContent='미설정';
-      remoteConnected=false; return;
-    }
-    document.getElementById('t-url').textContent=status.target;
-    if(!status.connected){
-      placeholder.style.display=''; connected.style.display='none';
-      badge.className='section-badge badge-warn'; badge.textContent='연결 끊김 — '+status.target;
-      remoteConnected=false; return;
-    }
-    placeholder.style.display='none'; connected.style.display='';
-    badge.className='section-badge badge-target'; badge.textContent='연결됨 — '+status.target;
-    remoteConnected=true;
-    const rjvm=await fetch('/remote/jvm').then(r=>r.json());
-    const rh=parseFloat(rjvm['heap.usage.percent']);
-    const rc=parseFloat(rjvm['cpu.process']);
-    pushH(tHeapH,isNaN(rh)?null:+rh.toFixed(1));
-    pushH(tCpuH, isNaN(rc)?null:+rc.toFixed(1));
-    tHeapChart.data.labels=[...labels]; tHeapChart.data.datasets[0].data=[...tHeapH]; tHeapChart.update('none');
-    tCpuChart.data.labels=[...labels];  tCpuChart.data.datasets[0].data=[...tCpuH];  tCpuChart.update('none');
-    const jvmName=String(rjvm['jvm.name']||'');
-    let targetLabel='원격 JVM';
-    if(jvmName.toLowerCase().includes('tomcat')||status.target.includes('8080')) targetLabel='Tomcat JVM';
-    else if(jvmName.toLowerCase().includes('spring')) targetLabel='Spring Boot JVM';
-    document.getElementById('t-name').textContent=targetLabel;
-    document.getElementById('t-heap-pct').textContent=rjvm['heap.usage.percent']??'—';
-    document.getElementById('t-heap-mb').textContent=`${rjvm['heap.used.mb']??'—'}/${rjvm['heap.max.mb']??'—'} MB`;
-    document.getElementById('t-cpu').textContent=rjvm['cpu.process']??'—';
-    document.getElementById('t-cpu-sys').textContent=`시스템: ${rjvm['cpu.system']??'—'}`;
-    document.getElementById('t-threads').textContent=rjvm['thread.count']??'—';
-    document.getElementById('t-threads-sub').textContent=`대기: ${rjvm['thread.waiting']??'—'} / 블록: ${rjvm['thread.blocked']??'—'}`;
-    const tbl=Number(rjvm['thread.blocked']||0);
-    const twt=Number(rjvm['thread.waiting']||0);
-    const ttm=Number(rjvm['thread.timed_waiting']||0);
-    document.getElementById('t-blocked').textContent=tbl;
-    document.getElementById('t-blocked').className='card-value'+(tbl>0?' warn':'');
-    document.getElementById('t-waiting').textContent=twt;
-    document.getElementById('t-timed').textContent=ttm;
-    document.getElementById('t-gc').textContent=rjvm['gc.total.count']??'—';
-    document.getElementById('t-gc-t').textContent=`소요: ${rjvm['gc.total.time.ms']??'—'} ms`;
-    document.getElementById('t-os-free').textContent=mbToGb(rjvm['os.free.memory.mb']);
-    document.getElementById('t-os-total').textContent=`전체: ${mbToGb(rjvm['os.total.memory.mb'])}`;
-    document.getElementById('t-uptime').textContent=fmtUp(Number(rjvm['uptime.ms']));
-    document.getElementById('t-jvm').textContent=jvmName||'—';
-    const rThreads=await fetch('/remote/threads').then(r=>r.json());
-    threadData.target=rThreads;
-    renderThreads('target','target-thread-tbody','target-thread-pills',rThreads,false);
-    renderLivePanel('remote-live-body',rThreads,'remote');
-  }catch(_){remoteConnected=false;}
-}
 
 // ── Agent refresh ─────────────────────────────────────────────────────────────
 async function refreshAgent(){
@@ -1192,7 +963,7 @@ function renderLivePanel(panelId, threads, scope){
   if(!threads||threads.length===0){body.innerHTML='<div style="padding:16px;text-align:center;color:#475569">스레드 없음</div>';return;}
 
   // Tomcat RequestProcessor 매칭: 스레드명 → 요청 정보
-  const reqArr=(scope==='remote'?requestData.remote:scope==='agent'?requestData.agent:[]);
+  const reqArr=(scope==='agent'?requestData.agent:[]);
   const reqMap={};
   for(const r of reqArr){if(r.worker) reqMap[r.worker]=r;}
 
@@ -1250,7 +1021,7 @@ function toggleStack(hdr){
 async function loadFullStack(el,scope,id){
   el.textContent='로딩 중...';
   try{
-    const url=scope==='local'?`/api/thread/${id}`:scope==='remote'?`/remote/thread/${id}`:`/agent/thread/${id}`;
+    const url=scope==='local'?`/api/thread/${id}`:`/agent/thread/${id}`;
     const d=await fetch(url).then(r=>r.json());
     const frames=(d.stackTrace||[]).map((f,i)=>`<div class="dump-frame${i===0?' top':''}">\tat ${esc(f)}</div>`).join('');
     el.outerHTML=frames;
@@ -1264,8 +1035,8 @@ function toggleDumpPanel(bodyId, hdrEl){
   const lbl=document.getElementById(lblId)||hdrEl.querySelector('span:last-child');
   lbl.textContent=body.classList.contains('open')?'▲ 접기':'▼ 펼치기';
   if(body.classList.contains('open')){
-    const scope=bodyId.startsWith('apm')?'apm':bodyId.startsWith('remote')?'target':'agent';
-    const rawScope=bodyId.startsWith('remote')?'remote':bodyId.startsWith('agent')?'agent':'local';
+    const scope=bodyId.startsWith('apm')?'apm':'agent';
+    const rawScope=bodyId.startsWith('agent')?'agent':'local';
     renderLivePanel(bodyId,threadData[scope],rawScope);
   }
 }
@@ -1277,7 +1048,6 @@ function setFilter(scope,state,btn){
   btn.closest('.filter-btns').querySelectorAll('.fbtn').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
   const map={apm:['apm-thread-tbody','apm-thread-pills',true],
-             target:['target-thread-tbody','target-thread-pills',false],
              agent:['agent-thread-tbody','agent-thread-pills',true]};
   const [tbodyId,pillsId,showPrio]=map[scope];
   renderThreads(scope,tbodyId,pillsId,threadData[scope],showPrio);
@@ -1285,7 +1055,6 @@ function setFilter(scope,state,btn){
 function setSearch(scope,val){
   threadSearch[scope]=val;
   const map={apm:['apm-thread-tbody','apm-thread-pills',true],
-             target:['target-thread-tbody','target-thread-pills',false],
              agent:['agent-thread-tbody','agent-thread-pills',true]};
   const [tbodyId,pillsId,showPrio]=map[scope];
   renderThreads(scope,tbodyId,pillsId,threadData[scope],showPrio);
@@ -1295,7 +1064,7 @@ function setSearch(scope,val){
 async function openThreadDetail(row){
   const id=row.getAttribute('data-thread-id');
   const scope=row.getAttribute('data-scope');
-  const url=scope==='apm'?`/api/thread/${id}`:scope==='target'?`/remote/thread/${id}`:`/agent/thread/${id}`;
+  const url=scope==='apm'?`/api/thread/${id}`:`/agent/thread/${id}`;
   document.getElementById('thread-modal').style.display='';
   document.getElementById('modal-thread-name').textContent='스레드 상세 로딩 중...';
   document.getElementById('modal-thread-body').innerHTML='<div style="padding:20px;text-align:center;color:#475569">로딩 중...</div>';
@@ -1357,8 +1126,8 @@ function closeThreadModal(e){
 
 // ── Thread Dump modal ─────────────────────────────────────────────────────────
 async function openDump(target){
-  const title={local:'Thread Dump (로컬 APM)',remote:'Thread Dump (원격 JMX)',agent:'Thread Dump (Agent)'}[target]||'Thread Dump';
-  const url={local:'/api/threaddump',remote:'/remote/threaddump',agent:'/agent/threaddump'}[target];
+  const title={local:'Thread Dump (로컬 APM)',agent:'Thread Dump (Agent)'}[target]||'Thread Dump';
+  const url={local:'/api/threaddump',agent:'/agent/threaddump'}[target];
   document.getElementById('dump-modal-title').textContent=title;
   document.getElementById('dump-modal').style.display='';
   document.getElementById('dump-modal-content').innerHTML='로딩 중...';
@@ -1425,9 +1194,6 @@ async function refreshDbPools(){
     const badge=document.getElementById('dbpool-badge');
     const tbody=document.getElementById('dbpool-tbody');
     const pools=[];
-    if(remoteConnected){
-      try{const r=await fetch('/remote/dbpools').then(r=>r.json());pools.push(...r);}catch(_){}
-    }
     if(agentConnected){
       try{const r=await fetch('/agent/dbpools').then(r=>r.json());pools.push(...r);}catch(_){}
     }
@@ -1551,7 +1317,7 @@ function normalizeIp(ip){
 function renderRequestRows(reqs, tbodyId, histKey){
   const tbody=document.getElementById(tbodyId);
   if(!tbody) return;
-  const summaryEl=document.getElementById(histKey==='remote'?'remote-requests-summary':'agent-requests-summary');
+  const summaryEl=document.getElementById('agent-requests-summary');
   if(!reqs||reqs.length===0){
     tbody.innerHTML='<tr><td class="no-data" colspan="9">Tomcat 기반 JVM 연결 시 표시됩니다</td></tr>';
     if(summaryEl) summaryEl.textContent='';
@@ -1615,14 +1381,13 @@ function renderRequestRows(reqs, tbodyId, histKey){
 async function openRequestDetail(idx, source){
   const req=requestData[source]?.[idx];
   if(!req) return;
-  const scopeKey=source==='remote'?'target':'agent';
-  const thread=threadData[scopeKey]?.find(t=>t.name===req.worker);
+  const thread=threadData['agent']?.find(t=>t.name===req.worker);
   document.getElementById('req-modal').style.display='';
   document.getElementById('req-modal-title').textContent=`HTTP 요청 상세 — ${req.worker||'?'}`;
   document.getElementById('req-modal-body').innerHTML='<div style="padding:20px;text-align:center;color:#475569">로딩 중...</div>';
   let threadDetail=null;
   if(thread){
-    const url=source==='remote'?`/remote/thread/${thread.id}`:`/agent/thread/${thread.id}`;
+    const url=`/agent/thread/${thread.id}`;
     try{ threadDetail=await fetch(url).then(r=>r.json()); }catch(_){}
   }
   document.getElementById('req-modal-body').innerHTML=buildRequestDetailHtml(req,threadDetail||thread);
@@ -1719,15 +1484,6 @@ function fmtBytes(b){
 
 async function refreshRequests(){
   try{
-    // remote 요청 데이터 수집 및 캐시
-    if(remoteConnected){
-      try{
-        const reqs=await fetch('/remote/requests').then(r=>r.json());
-        requestData.remote=reqs||[];
-        renderRequestRows(reqs,'remote-requests-tbody','remote');
-      }catch(_){requestData.remote=[];}
-    }
-    // agent 요청 데이터 수집, 캐시 및 테이블 렌더링
     if(agentConnected){
       try{
         const ar=await fetch('/agent/requests').then(r=>r.json());
@@ -1736,29 +1492,6 @@ async function refreshRequests(){
       }catch(_){requestData.agent=[];}
     }
   }catch(_){}
-}
-
-// ── Remote 섹션 타이머 (간격 조절 가능) ───────────────────────────────────────
-let remoteIntervalMs = 5000;
-let remoteTimerHandle = null;
-
-function scheduleRemoteTimer() {
-  if (remoteTimerHandle) clearTimeout(remoteTimerHandle);
-  remoteTimerHandle = setTimeout(async () => {
-    await refreshRemote();
-    scheduleRemoteTimer();
-  }, remoteIntervalMs);
-}
-
-function setRemoteRefreshInterval(sec) {
-  remoteIntervalMs = sec * 1000;
-  scheduleRemoteTimer();
-}
-
-async function triggerRemoteRefresh() {
-  if (remoteTimerHandle) clearTimeout(remoteTimerHandle);
-  await Promise.all([refreshRemote(), refreshRequests()]);
-  scheduleRemoteTimer();
 }
 
 // ── Agent 섹션 타이머 (간격 조절 가능) ────────────────────────────────────────
@@ -1828,7 +1561,7 @@ function restoreSectionVisibility() {
       const sec = document.getElementById(id);
       const btn = document.getElementById(id.replace('-section', '-toggle-btn').replace('apm-section', 'apm-section').replace('jmx-section','jmx-section'));
       // map section id → btn id
-      const btnMap = {'apm-section':'apm-toggle-btn','jmx-section':'jmx-toggle-btn',
+      const btnMap = {'apm-section':'apm-toggle-btn',
                       'agent-section':'agent-toggle-btn','dbpool-section':'dbpool-toggle-btn'};
       const btnEl = document.getElementById(btnMap[id]);
       if (sec)   sec.classList.add('sect-collapsed');
@@ -1841,14 +1574,12 @@ function restoreSectionVisibility() {
 restoreSectionVisibility();
 refresh();
 refreshApmThreads();
-refreshRemote();
 refreshAgent();
 refreshAgentTop10();
 refreshDbPools();
 refreshRequests();
 setInterval(refresh,           3000);
 setInterval(refreshApmThreads, 5000);
-scheduleRemoteTimer();   // Remote: 사용자 설정 간격으로 타이머 관리
 scheduleAgentTimer();    // Agent 스레드: 사용자 설정 간격으로 타이머 관리
 scheduleTop10Timer();    // CPU Top 10: 독립 간격 타이머
 setInterval(refreshDbPools,    8000);

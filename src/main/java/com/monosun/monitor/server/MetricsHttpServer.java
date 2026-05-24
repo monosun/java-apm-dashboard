@@ -5,7 +5,6 @@ import com.monosun.monitor.core.Span;
 import com.monosun.monitor.core.SpanStorage;
 import com.monosun.monitor.exporter.PrometheusExporter;
 import com.monosun.monitor.remote.AgentHttpClient;
-import com.monosun.monitor.remote.RemoteJvmCollector;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 
@@ -33,11 +32,6 @@ import java.util.concurrent.Executors;
  *   GET /threads            — 로컬 스레드 목록 JSON
  *   GET /api/threaddump     — 로컬 전체 스레드 덤프 (text/plain)
  *   GET /api/thread/{id}    — 로컬 단일 스레드 상세 + 전체 스택 JSON
- *   GET /remote/jvm         — 원격 JVM 메트릭 JSON (JMX)
- *   GET /remote/status      — 원격 JVM 연결 상태 JSON
- *   GET /remote/threads     — 원격 JVM 스레드 목록 JSON
- *   GET /remote/threaddump  — 원격 JVM 전체 스레드 덤프 (text/plain)
- *   GET /remote/thread/{id} — 원격 JVM 단일 스레드 상세 JSON
  *   GET /agent/status       — Agent 연결 상태 JSON
  *   GET /agent/jvm          — Agent JVM 메트릭 (프록시)
  *   GET /agent/threads      — Agent 스레드 목록 (프록시)
@@ -50,7 +44,6 @@ public class MetricsHttpServer {
     private final HttpServer          server;
     private final int                 port;
     private final String              dashboardHtml;
-    private final RemoteJvmCollector  remoteCollector;
     private final AgentHttpClient     agentClient;
     private final JvmMetricsCollector jvmCollector;
     private final boolean             tracesEnabled;
@@ -59,16 +52,14 @@ public class MetricsHttpServer {
                              PrometheusExporter exporter,
                              JvmMetricsCollector jvm,
                              SpanStorage storage,
-                             RemoteJvmCollector remoteCollector,
                              AgentHttpClient agentClient) throws IOException {
-        this(port, exporter, jvm, storage, remoteCollector, agentClient, true);
+        this(port, exporter, jvm, storage, agentClient, true);
     }
 
     public MetricsHttpServer(int port,
                              PrometheusExporter exporter,
                              JvmMetricsCollector jvm,
                              SpanStorage storage,
-                             RemoteJvmCollector remoteCollector,
                              AgentHttpClient agentClient,
                              boolean tracesEnabled) throws IOException {
         this.port            = port;
@@ -76,7 +67,6 @@ public class MetricsHttpServer {
         this.agentClient     = agentClient;
         this.tracesEnabled   = tracesEnabled;
         this.dashboardHtml   = loadResource("dashboard.html");
-        this.remoteCollector = remoteCollector;
         this.server          = HttpServer.create(new InetSocketAddress(port), 0);
 
         server.createContext("/dashboard", exchange -> handle(exchange, "text/html; charset=UTF-8",
@@ -101,16 +91,6 @@ public class MetricsHttpServer {
             () -> "{\"tracesEnabled\":" + this.tracesEnabled + "}"
         ));
 
-        server.createContext("/remote/jvm", exchange -> handle(exchange, "application/json",
-            () -> remoteCollector != null
-                ? toJson(remoteCollector.getSnapshot())
-                : "{\"error\":\"remote JMX 미설정 (monitor.properties: remote.jmx.enabled=true)\"}"));
-
-        server.createContext("/remote/status", exchange -> handle(exchange, "application/json",
-            () -> remoteCollector != null
-                ? remoteCollector.statusJson()
-                : "{\"connected\":false,\"target\":\"\",\"lastCollectedMs\":-1,\"error\":\"미설정\"}"));
-
         server.createContext("/threads", exchange -> handle(exchange, "application/json",
             () -> toThreadListJson(jvm.getThreadList())));
 
@@ -125,35 +105,6 @@ public class MetricsHttpServer {
                 Map<String, Object> detail = jvm.getThreadDetail(Long.parseLong(idStr));
                 return detail != null ? toSingleThreadJson(detail) : "{\"error\":\"not found\"}";
             }));
-
-        server.createContext("/remote/threads", exchange -> handle(exchange, "application/json",
-            () -> remoteCollector != null && remoteCollector.isConnected()
-                ? toThreadListJson(remoteCollector.getThreadList())
-                : "[]"));
-
-        server.createContext("/remote/threaddump", exchange -> handle(exchange, "text/plain; charset=UTF-8",
-            () -> remoteCollector != null ? remoteCollector.getThreadDump()
-                : "원격 JVM 연결 안됨"));
-
-        server.createContext("/remote/thread/", exchange -> handle(exchange, "application/json",
-            () -> {
-                if (remoteCollector == null) return "{\"error\":\"not configured\"}";
-                String idStr = exchange.getRequestURI().getPath().substring("/remote/thread/".length());
-                idStr = idStr.replaceAll("[^0-9]", "");
-                if (idStr.isEmpty()) return "{\"error\":\"id required\"}";
-                Map<String, Object> detail = remoteCollector.getThreadDetail(Long.parseLong(idStr));
-                return detail != null ? toSingleThreadJson(detail) : "{\"error\":\"not found\"}";
-            }));
-
-        server.createContext("/remote/requests", exchange -> handle(exchange, "application/json",
-            () -> remoteCollector != null && remoteCollector.isConnected()
-                ? toThreadListJson(remoteCollector.getRequestProcessors())
-                : "[]"));
-
-        server.createContext("/remote/dbpools", exchange -> handle(exchange, "application/json",
-            () -> remoteCollector != null && remoteCollector.isConnected()
-                ? toThreadListJson(remoteCollector.getConnectionPools())
-                : "[]"));
 
         // ── Agent 프록시 엔드포인트 ───────────────────────────────────────────
         server.createContext("/agent/status", exchange -> handle(exchange, "application/json",

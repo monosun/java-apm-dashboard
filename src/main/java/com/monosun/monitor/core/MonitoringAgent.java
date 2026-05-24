@@ -3,7 +3,6 @@ package com.monosun.monitor.core;
 import com.monosun.monitor.config.MonitorConfig;
 import com.monosun.monitor.exporter.PrometheusExporter;
 import com.monosun.monitor.remote.AgentHttpClient;
-import com.monosun.monitor.remote.RemoteJvmCollector;
 import com.monosun.monitor.server.MetricsHttpServer;
 
 import java.io.IOException;
@@ -33,7 +32,6 @@ public class MonitoringAgent {
     private final MetricsHttpServer    httpServer;
     private final ScheduledExecutorService scheduler;
     private final int                  printIntervalSec;
-    private final RemoteJvmCollector   remoteCollector;
     private final AgentHttpClient      agentClient;
 
     private MonitoringAgent(Builder builder) throws IOException {
@@ -51,15 +49,6 @@ public class MonitoringAgent {
             return t;
         });
 
-        // 원격 JMX 수집기
-        RemoteJvmCollector remote = null;
-        if (cfg.remoteEnabled) {
-            remote = new RemoteJvmCollector(cfg.remoteHost, cfg.remotePort, cfg.remoteUser, cfg.remotePassword);
-            remote.connect();
-            remote.startPolling(cfg.remotePollIntervalSec, cfg.remoteReconnectIntervalSec, scheduler);
-        }
-        this.remoteCollector = remote;
-
         // Agent HTTP 클라이언트
         AgentHttpClient agent = null;
         if (cfg.agentEnabled) {
@@ -72,7 +61,7 @@ public class MonitoringAgent {
         int port = builder.httpPort > 0 ? builder.httpPort : cfg.httpPort;
         PrometheusExporter exporter = new PrometheusExporter(jvmCollector, spanStorage);
         this.httpServer = new MetricsHttpServer(port, exporter, jvmCollector, spanStorage,
-            remoteCollector, agentClient, cfg.tracesEnabled);
+            agentClient, cfg.tracesEnabled);
     }
 
     // -------------------------------------------------------------------------
@@ -92,8 +81,7 @@ public class MonitoringAgent {
     public void stop() {
         scheduler.shutdownNow();
         httpServer.stop();
-        if (remoteCollector != null) remoteCollector.close();
-        if (agentClient    != null) agentClient.close();
+        if (agentClient != null) agentClient.close();
         LOG.info("[MonitoringAgent] 종료");
     }
 
@@ -104,7 +92,6 @@ public class MonitoringAgent {
     public TransactionTracer    tracer()          { return tracer; }
     public JvmMetricsCollector  jvmCollector()    { return jvmCollector; }
     public SpanStorage          spanStorage()     { return spanStorage; }
-    public RemoteJvmCollector   remoteCollector() { return remoteCollector; }
     public AgentHttpClient      agentClient()     { return agentClient; }
 
     public void printJvmSnapshot() {

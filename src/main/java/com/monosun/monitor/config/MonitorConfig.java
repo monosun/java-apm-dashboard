@@ -24,15 +24,6 @@ public final class MonitorConfig {
     public final int     spanBufferSize;
     public final boolean tracesEnabled;
 
-    // ── 원격 JMX ────────────────────────────────────────────────────────────
-    public final boolean remoteEnabled;
-    public final String  remoteHost;
-    public final int     remotePort;
-    public final String  remoteUser;
-    public final String  remotePassword;
-    public final int     remotePollIntervalSec;
-    public final int     remoteReconnectIntervalSec;
-
     // ── Agent HTTP 연결 ──────────────────────────────────────────────────────
     public final boolean agentEnabled;
     public final String  agentHost;
@@ -80,7 +71,7 @@ public final class MonitorConfig {
 
         // 3. system property overrides
         System.getProperties().stringPropertyNames().stream()
-            .filter(k -> k.startsWith("server.") || k.startsWith("remote.") || k.startsWith("alert."))
+            .filter(k -> k.startsWith("server.") || k.startsWith("agent.") || k.startsWith("alert."))
             .forEach(k -> p.setProperty(k, System.getProperty(k)));
 
         return new MonitorConfig(p);
@@ -93,14 +84,6 @@ public final class MonitorConfig {
         this.printIntervalSec     = i(p, "server.print.interval.sec",           15);
         this.spanBufferSize       = i(p, "server.span.buffer.size",             1000);
         this.tracesEnabled        = b(p, "server.traces.enabled",               true);
-
-        this.remoteEnabled              = b(p, "remote.jmx.enabled",                  false);
-        this.remoteHost                 = s(p, "remote.jmx.host",                     "localhost");
-        this.remotePort                 = i(p, "remote.jmx.port",                     9999);
-        this.remoteUser                 = s(p, "remote.jmx.user",                     "");
-        this.remotePassword             = s(p, "remote.jmx.password",                 "");
-        this.remotePollIntervalSec      = i(p, "remote.jmx.poll.interval.sec",        5);
-        this.remoteReconnectIntervalSec = i(p, "remote.jmx.reconnect.interval.sec",   30);
 
         this.agentEnabled            = b(p, "agent.enabled",          false);
         this.agentHost               = s(p, "agent.host",             "localhost");
@@ -116,10 +99,8 @@ public final class MonitorConfig {
 
     public String summary() {
         return String.format(
-            "[MonitorConfig] port=%d printInterval=%ds buffer=%d remote=%s%s agent=%s%s",
+            "[MonitorConfig] port=%d printInterval=%ds buffer=%d agent=%s%s",
             httpPort, printIntervalSec, spanBufferSize,
-            remoteEnabled ? "ON" : "OFF",
-            remoteEnabled ? " target=" + remoteHost + ":" + remotePort : "",
             agentEnabled ? "ON" : "OFF",
             agentEnabled ? " target=" + agentHost + ":" + agentPort : "");
     }
