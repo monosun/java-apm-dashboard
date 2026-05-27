@@ -141,7 +141,7 @@ public class AgentHttpServer {
         String jvmVersion = esc(rt.getVmVersion());
         long   pid        = ProcessHandle.current().pid();
         long   uptimeMs   = System.currentTimeMillis() - startTimeMs;
-        return "{\"agentVersion\":\"1.11.0\""
+        return "{\"agentVersion\":\"1.12.1\""
             + ",\"startTime\":\"" + Instant.ofEpochMilli(startTimeMs) + "\""
             + ",\"uptimeMs\":" + uptimeMs
             + ",\"jvmName\":\"" + jvmName + "\""

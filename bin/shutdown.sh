@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================
-#  shutdown.sh  —  Java APM Dashboard v1.11.0  Stop
+#  shutdown.sh  —  Java APM Dashboard v1.12.1  Stop
 #
 #  Usage:
 #    ./shutdown.sh              Default port 9090
@@ -31,7 +31,7 @@ error() { echo -e "${RED}[ERROR]${NC} $*" >&2; }
 
 echo ""
 echo " ╔════════════════════════════════════════════╗"
-echo " ║  Java APM Dashboard v1.11.0  |  Stop      ║"
+echo " ║  Java APM Dashboard v1.12.1  |  Stop      ║"
 echo " ╚════════════════════════════════════════════╝"
 echo ""
 

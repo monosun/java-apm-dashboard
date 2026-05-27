@@ -2,7 +2,7 @@
 setlocal EnableDelayedExpansion
 
 :: ============================================================
-::  stop.bat -- Java APM Dashboard v1.11.0
+::  stop.bat -- Java APM Dashboard v1.12.1
 ::  Quick stop: no PID file, wmic + netstat fallback.
 ::  For managed stop (with PID file), use shutdown.bat.
 :: ============================================================
@@ -12,7 +12,7 @@ set "FOUND_PID="
 
 echo.
 echo  =============================================
-echo   Java APM Dashboard v1.11.0  ^|  Stop
+echo   Java APM Dashboard v1.12.1  ^|  Stop
 echo  =============================================
 echo.
 

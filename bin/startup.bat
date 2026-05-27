@@ -2,7 +2,7 @@
 setlocal EnableDelayedExpansion
 
 :: ============================================================
-::  startup.bat -- Java APM Dashboard v1.11.0
+::  startup.bat -- Java APM Dashboard v1.12.1
 ::
 ::  Steps:
 ::    1. Prevent duplicate launch (PID file check)
@@ -27,7 +27,7 @@ if exist "D:\jdk\openjdk\jdk-21.0.8\bin\java.exe" (
 
 echo.
 echo  =============================================
-echo   Java APM Dashboard v1.11.0  ^|  Start
+echo   Java APM Dashboard v1.12.1  ^|  Start
 echo   Dashboard : %DASHBOARD%
 echo  =============================================
 echo.
