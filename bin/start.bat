@@ -14,41 +14,41 @@ echo   Dashboard: %DASHBOARD%
 echo  =============================================
 echo.
 
-:: Java 확인
+:: Check Java
 if not exist "%JAVA%" (
     where java >nul 2>&1
     if errorlevel 1 (
-        echo [ERROR] Java를 찾을 수 없습니다.
+        echo [ERROR] Java not found.
         pause & exit /b 1
     )
     set "JAVA=java"
 )
 
-:: JAR 찾기 (original / agent / integration 제외)
+:: Find JAR (exclude original / agent / integration)
 set "JAR="
 for %%f in ("%PROJECT_DIR%\target\java-monitor-*.jar") do (
     echo %%f | findstr /i "original agent integration" >nul || set "JAR=%%f"
 )
 
-:: JAR 없으면 빌드
+:: Build if no JAR found
 if not defined JAR (
-    echo [INFO] JAR 파일 없음 — 빌드를 시작합니다...
+    echo [INFO] No JAR found -- starting build...
     if not exist "%MVN%" (
-        echo [ERROR] Maven을 찾을 수 없습니다: %MVN%
+        echo [ERROR] Maven not found: %MVN%
         pause & exit /b 1
     )
     call "%MVN%" -f "%PROJECT_DIR%\pom.xml" package -q
-    if %ERRORLEVEL% NEQ 0 ( echo [ERROR] 빌드 실패 & pause & exit /b 1 )
+    if %ERRORLEVEL% NEQ 0 ( echo [ERROR] Build failed & pause & exit /b 1 )
     for %%f in ("%PROJECT_DIR%\target\java-monitor-*.jar") do (
         echo %%f | findstr /i "original agent integration" >nul || set "JAR=%%f"
     )
 )
 
 echo [INFO] JAR: %JAR%
-echo [INFO] 3초 후 브라우저를 자동으로 엽니다...
+echo [INFO] Opening browser in 3 seconds...
 start "" /B cmd /C "timeout /T 3 /NOBREAK >nul && start %DASHBOARD%"
 
-echo [INFO] Ctrl+C 로 종료합니다.
+echo [INFO] Press Ctrl+C to stop.
 echo.
 "%JAVA%" -Xms256m -Xmx512m -XX:+UseG1GC ^
          -Djava.util.logging.config.file="%SCRIPT_DIR%logging.properties" ^
@@ -56,5 +56,5 @@ echo.
          -jar "%JAR%"
 
 echo.
-echo [INFO] 서버 종료.
+echo [INFO] Server stopped.
 pause

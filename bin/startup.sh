@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 # ============================================================
-#  startup.sh  —  Java APM Dashboard v1.11.0  백그라운드 시작
+#  startup.sh  —  Java APM Dashboard v1.11.0  Background Start
 #
-#  사용법:
-#    ./startup.sh              기본 포트 9090 으로 시작
-#    ./startup.sh 8080         포트 지정
+#  Usage:
+#    ./startup.sh              Start with default port 9090
+#    ./startup.sh 8080         Specify port
 #
-#  동작 순서:
-#    1. 이중 기동 방지 (PID 파일 + kill -0 확인)
-#    2. target/ 에서 최신 JAR 자동 탐색
-#    3. nohup 으로 백그라운드 시작, logs/monitor.log 에 출력
-#    4. PID 를 logs/monitor.pid 에 저장
-#    5. 헬스 체크 통과 시 브라우저 자동 오픈
+#  Steps:
+#    1. Prevent duplicate launch (PID file + kill -0 check)
+#    2. Auto-locate latest JAR under target/
+#    3. Start in background with nohup, output to logs/monitor.log
+#    4. Save PID to logs/monitor.pid
+#    5. Open browser automatically after health check passes
 # ============================================================
 
 set -euo pipefail
@@ -36,42 +36,42 @@ JVM_OPTS=(
     "-Dserver.http.port=$PORT"
 )
 
-# ── 컬러 출력 ─────────────────────────────────────────────────
+# ── Color output ──────────────────────────────────────────────
 GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'
-info()  { echo -e "${GREEN}[정보]${NC} $*"; }
-warn()  { echo -e "${YELLOW}[경고]${NC} $*"; }
-error() { echo -e "${RED}[오류]${NC} $*" >&2; }
+info()  { echo -e "${GREEN}[INFO]${NC} $*"; }
+warn()  { echo -e "${YELLOW}[WARN]${NC} $*"; }
+error() { echo -e "${RED}[ERROR]${NC} $*" >&2; }
 
 echo ""
 echo " ╔════════════════════════════════════════════╗"
-echo " ║  Java APM Dashboard v1.11.0  |  시작      ║"
+echo " ║  Java APM Dashboard v1.11.0  |  Start     ║"
 echo " ║  Dashboard : $DASHBOARD"
 echo " ╚════════════════════════════════════════════╝"
 echo ""
 
-# ── [1] logs 디렉토리 생성 ────────────────────────────────────
+# ── [1] Create logs directory ─────────────────────────────────
 mkdir -p "$LOG_DIR"
 
-# ── [2] Java 확인 ─────────────────────────────────────────────
+# ── [2] Check Java ────────────────────────────────────────────
 if ! command -v java &>/dev/null; then
-    error "Java 를 찾을 수 없습니다. JAVA_HOME 또는 PATH 를 확인하세요."
+    error "Java not found. Check JAVA_HOME or PATH."
     exit 1
 fi
 info "Java  : $(java -version 2>&1 | head -1)"
 
-# ── [3] 이중 기동 방지 ────────────────────────────────────────
+# ── [3] Prevent duplicate launch ──────────────────────────────
 if [[ -f "$PID_FILE" ]]; then
     EXISTING_PID=$(cat "$PID_FILE")
     if kill -0 "$EXISTING_PID" 2>/dev/null; then
-        warn "이미 실행 중입니다. PID: $EXISTING_PID"
-        warn "종료하려면: ./bin/shutdown.sh"
+        warn "Already running. PID: $EXISTING_PID"
+        warn "To stop: ./bin/shutdown.sh"
         exit 0
     fi
-    info "오래된 PID 파일 삭제 (PID: $EXISTING_PID 는 종료됨)"
+    info "Removing stale PID file (PID: $EXISTING_PID is no longer running)"
     rm -f "$PID_FILE"
 fi
 
-# ── [4] JAR 탐색 (original / agent / integration 제외) ───────
+# ── [4] Find JAR (exclude original / agent / integration) ─────
 JAR=""
 for f in "$PROJECT_DIR"/target/java-monitor-*.jar; do
     [[ "$f" == *original* || "$f" == *agent* || "$f" == *integration* ]] && continue
@@ -79,22 +79,22 @@ for f in "$PROJECT_DIR"/target/java-monitor-*.jar; do
 done
 
 if [[ -z "$JAR" || ! -f "$JAR" ]]; then
-    error "빌드된 JAR 파일이 없습니다."
-    error "먼저 빌드하세요: cd '$PROJECT_DIR' && mvn package -DskipTests"
+    error "No built JAR file found."
+    error "Run build first: cd '$PROJECT_DIR' && mvn package -DskipTests"
     exit 1
 fi
 info "JAR   : $JAR"
 
-# ── [5] nohup 백그라운드 시작 ─────────────────────────────────
-info "서버를 시작합니다 (nohup → $LOG_FILE)..."
+# ── [5] Start in background with nohup ────────────────────────
+info "Starting server (nohup -> $LOG_FILE)..."
 nohup java "${JVM_OPTS[@]}" -jar "$JAR" >> "$LOG_FILE" 2>&1 &
 PID=$!
 echo "$PID" > "$PID_FILE"
-info "PID   : $PID   저장됨: $PID_FILE"
-info "로그  : $LOG_FILE"
+info "PID   : $PID   saved: $PID_FILE"
+info "Log   : $LOG_FILE"
 
-# ── [6] 헬스 체크 대기 (최대 30초) ───────────────────────────
-info "서버 기동 대기 중..."
+# ── [6] Wait for health check (up to 30s) ─────────────────────
+info "Waiting for server to be ready..."
 READY=0
 for i in $(seq 1 30); do
     sleep 1
@@ -107,9 +107,9 @@ done
 echo ""
 
 if [[ $READY -eq 1 ]]; then
-    info "서버가 정상 기동되었습니다."
-    info "대시보드 : $DASHBOARD"
-    # 브라우저 자동 오픈 (Linux: xdg-open, macOS: open)
+    info "Server started successfully."
+    info "Dashboard : $DASHBOARD"
+    # Auto-open browser (Linux: xdg-open, macOS: open)
     if command -v xdg-open &>/dev/null; then
         xdg-open "$DASHBOARD" &>/dev/null & disown
     elif command -v open &>/dev/null; then
@@ -117,7 +117,7 @@ if [[ $READY -eq 1 ]]; then
     fi
     exit 0
 else
-    warn "헬스 체크 응답 없음 (30초 경과). 로그를 확인하세요:"
+    warn "Health check timed out (30s). Check the logs:"
     warn "  tail -f $LOG_FILE"
     exit 1
 fi
