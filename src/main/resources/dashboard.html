@@ -669,9 +669,10 @@
                       onchange="setTop10RefreshInterval(+this.value)" title="자동 갱신 주기">
                 <option value="1">1초</option>
                 <option value="3">3초</option>
-                <option value="5" selected>5초</option>
+                <option value="5">5초</option>
                 <option value="10">10초</option>
                 <option value="30">30초</option>
+                <option value="60" selected>60초</option>
               </select>
               <button class="btn btn-sm" onclick="triggerTop10Refresh()" title="지금 갱신">⟳ 지금 갱신</button>
             </div>
@@ -764,6 +765,7 @@ const requestHistory = { agent: {} };
 // Modal state
 let currentDumpText = '';
 let currentDumpFiltered = '';
+let threadDetailLoaded = false;
 
 function pushH(a,v){a.push(v);if(a.length>HIST)a.shift();}
 function syncLabels(){
@@ -1086,6 +1088,7 @@ async function openThreadDetail(row){
   const id=row.getAttribute('data-thread-id');
   const scope=row.getAttribute('data-scope');
   const url=scope==='apm'?`/api/thread/${id}`:`/agent/thread/${id}`;
+  threadDetailLoaded=false;
   document.getElementById('thread-modal').style.display='';
   document.getElementById('modal-thread-name').textContent='스레드 상세 로딩 중...';
   document.getElementById('modal-thread-body').innerHTML='<div style="padding:20px;text-align:center;color:#475569">로딩 중...</div>';
@@ -1093,6 +1096,7 @@ async function openThreadDetail(row){
     const d=await fetch(url).then(r=>r.json());
     document.getElementById('modal-thread-name').innerHTML=`<span class="tb ${stateClass(d.state)}" style="margin-right:8px">${d.state}</span>${esc(d.name)}`;
     document.getElementById('modal-thread-body').innerHTML=buildThreadDetailHtml(d);
+    threadDetailLoaded=true;
   }catch(e){
     document.getElementById('modal-thread-body').innerHTML=`<div style="color:#F87171;padding:16px">로드 실패: ${e.message}</div>`;
   }
@@ -1142,6 +1146,8 @@ function buildThreadDetailHtml(d){
 }
 function closeThreadModal(e){
   if(e&&e.currentTarget!==e.target) return;
+  if(threadDetailLoaded&&!confirm('스레드 상세 보기를 닫으시겠습니까?')) return;
+  threadDetailLoaded=false;
   document.getElementById('thread-modal').style.display='none';
 }
 
@@ -1653,7 +1659,7 @@ async function triggerAgentRefresh() {
 }
 
 // ── CPU Top 10 타이머 (독립 간격 조절 가능) ───────────────────────────────────
-let top10IntervalMs  = 5000;
+let top10IntervalMs  = 60000;
 let top10TimerHandle = null;
 
 function scheduleTop10Timer() {

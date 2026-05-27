@@ -385,10 +385,72 @@ public class AgentThreadCollector {
     public List<Map<String, Object>> getConnectionPools() {
         MBeanServer mbs = ManagementFactory.getPlatformMBeanServer();
         List<Map<String, Object>> result = new ArrayList<>();
-        result.addAll(queryLocalPools(mbs, "com.zaxxer.hikari:type=PoolStats,*",           "hikari"));
-        result.addAll(queryLocalPools(mbs, "Catalina:type=DataSource,*",                    "tomcat-jdbc"));
+        result.addAll(queryHikariPools(mbs));
+        result.addAll(queryLocalPools(mbs, "Catalina:type=DataSource,*",                       "tomcat-jdbc"));
         result.addAll(queryLocalPools(mbs, "org.apache.commons.pool2:type=GenericObjectPool,*", "dbcp2"));
         return result;
+    }
+
+    // HikariCP MBean 패턴은 세 가지:
+    //   type=PoolStats,name=<pool>   — Dropwizard metrics 통합 (runtime 수치 + config)
+    //   type=Pool (<pool>)           — 내장 JMX HikariPoolMXBean (runtime 수치)
+    //   type=PoolConfig (<pool>)     — 내장 JMX HikariConfigMXBean (설정값)
+    // PoolStats 우선, 없으면 Pool+PoolConfig 조합으로 수집한다.
+    private List<Map<String, Object>> queryHikariPools(MBeanServer mbs) {
+        Set<ObjectName> all;
+        try {
+            all = mbs.queryNames(new ObjectName("com.zaxxer.hikari:*"), null);
+        } catch (Exception e) {
+            return Collections.emptyList();
+        }
+
+        Map<String, ObjectName> statsMap  = new LinkedHashMap<>();
+        Map<String, ObjectName> poolMap   = new LinkedHashMap<>();
+        Map<String, ObjectName> configMap = new LinkedHashMap<>();
+
+        for (ObjectName on : all) {
+            String t = on.getKeyProperty("type");
+            if (t == null) continue;
+            if (t.equals("PoolStats")) {
+                // type=PoolStats,name=<pool> or type=PoolStats,pool=<pool>
+                String name = on.getKeyProperty("name");
+                if (name == null) name = on.getKeyProperty("pool");
+                if (name != null) statsMap.put(name, on);
+            } else if (t.startsWith("Pool (") && t.endsWith(")")) {
+                poolMap.put(t.substring(6, t.length() - 1), on);
+            } else if (t.startsWith("PoolConfig (") && t.endsWith(")")) {
+                configMap.put(t.substring(12, t.length() - 1), on);
+            }
+        }
+
+        List<Map<String, Object>> result = new ArrayList<>();
+        Set<String> seen = new HashSet<>(statsMap.keySet());
+
+        for (Map.Entry<String, ObjectName> e : statsMap.entrySet()) {
+            result.add(buildHikariEntry(mbs, e.getKey(), e.getValue(), null));
+        }
+        for (Map.Entry<String, ObjectName> e : poolMap.entrySet()) {
+            if (seen.contains(e.getKey())) continue;
+            result.add(buildHikariEntry(mbs, e.getKey(), e.getValue(), configMap.get(e.getKey())));
+        }
+        return result;
+    }
+
+    private Map<String, Object> buildHikariEntry(MBeanServer mbs, String poolName,
+                                                  ObjectName statsOn, ObjectName cfgOn) {
+        Map<String, Object> p = new LinkedHashMap<>();
+        p.put("poolType", "hikari");
+        p.put("poolName", poolName);
+        p.put("totalConnections",  toLong(safeAttr(mbs, statsOn, "TotalConnections",         -1L)));
+        p.put("activeConnections", toLong(safeAttr(mbs, statsOn, "ActiveConnections",         -1L)));
+        p.put("idleConnections",   toLong(safeAttr(mbs, statsOn, "IdleConnections",           -1L)));
+        p.put("pendingThreads",    toLong(safeAttr(mbs, statsOn, "ThreadsAwaitingConnection", -1L)));
+        // MaximumPoolSize / MinimumIdle: Pool 빈에 없으면 PoolConfig 빈에서 읽는다
+        p.put("maxPoolSize", toLong(safeAttr(mbs, statsOn, "MaximumPoolSize",
+                             cfgOn != null ? safeAttr(mbs, cfgOn, "MaximumPoolSize", -1L) : -1L)));
+        p.put("minIdle",     toLong(safeAttr(mbs, statsOn, "MinimumIdle",
+                             cfgOn != null ? safeAttr(mbs, cfgOn, "MinimumIdle", -1L) : -1L)));
+        return p;
     }
 
     private List<Map<String, Object>> queryLocalPools(MBeanServer mbs, String patternStr, String poolType) {
