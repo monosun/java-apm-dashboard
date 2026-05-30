@@ -720,6 +720,16 @@
     </div>
     <div id="dbpool-content">
       <div class="chart-box">
+        <div style="display:flex;justify-content:flex-end;align-items:center;gap:6px;margin-bottom:8px">
+          <select id="dbpool-refresh-sel" class="refresh-sel"
+                  onchange="setDbPoolRefreshInterval(+this.value)" title="자동 갱신 주기">
+            <option value="5">5초</option>
+            <option value="10" selected>10초</option>
+            <option value="30">30초</option>
+            <option value="60">60초</option>
+          </select>
+          <button class="btn btn-sm" onclick="triggerDbPoolRefresh()" title="지금 갱신">⟳ 지금 갱신</button>
+        </div>
         <div class="table-wrap">
           <table>
             <thead><tr>
@@ -1698,6 +1708,29 @@ async function triggerTop10Refresh() {
   scheduleTop10Timer();
 }
 
+// ── DB Pool 타이머 (독립 간격 조절 가능) ─────────────────────────────────────
+let dbPoolIntervalMs  = 10000;
+let dbPoolTimerHandle = null;
+
+function scheduleDbPoolTimer() {
+  if (dbPoolTimerHandle) clearTimeout(dbPoolTimerHandle);
+  dbPoolTimerHandle = setTimeout(async () => {
+    await refreshDbPools();
+    scheduleDbPoolTimer();
+  }, dbPoolIntervalMs);
+}
+
+function setDbPoolRefreshInterval(sec) {
+  dbPoolIntervalMs = sec * 1000;
+  scheduleDbPoolTimer();
+}
+
+async function triggerDbPoolRefresh() {
+  if (dbPoolTimerHandle) clearTimeout(dbPoolTimerHandle);
+  await refreshDbPools();
+  scheduleDbPoolTimer();
+}
+
 // ── 섹션 접기 / 펼치기 ──────────────────────────────────────────────────���─────
 function toggleSection(sectionId, btnId) {
   const sec = document.getElementById(sectionId);
@@ -1740,7 +1773,7 @@ setInterval(refresh,           3000);
 setInterval(refreshApmThreads, 5000);
 scheduleAgentTimer();    // Agent 스레드: 사용자 설정 간격으로 타이머 관리
 scheduleTop10Timer();    // CPU Top 10: 독립 간격 타이머
-setInterval(refreshDbPools,    8000);
+scheduleDbPoolTimer();   // DB Pool: 독립 간격 타이머
 setInterval(refreshRequests,   3000);
 </script>
 </body>
