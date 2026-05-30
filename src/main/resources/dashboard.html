@@ -583,7 +583,7 @@
               <button class="fbtn fbtn-timed"    onclick="setFilter('agent','TIMED_WAITING',this)">TIMED</button>
               <button class="fbtn fbtn-runnable" onclick="setFilter('agent','RUNNABLE',this)">RUNNABLE</button>
             </div>
-            <input class="thread-search" type="text" placeholder="스레드 이름 검색..." oninput="setSearch('agent',this.value)">
+            <input id="agent-thread-search" class="thread-search" type="text" placeholder="스레드 이름 검색..." oninput="setSearch('agent',this.value)">
             <div class="pills" id="agent-thread-pills"></div>
           </div>
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
@@ -660,7 +660,7 @@
                 <button class="fbtn fbtn-timed"       onclick="setTop10Filter('TIMED_WAITING',this)">TIMED</button>
                 <button class="fbtn fbtn-runnable"    onclick="setTop10Filter('RUNNABLE',this)">RUNNABLE</button>
               </div>
-              <input class="thread-search" type="text" placeholder="스레드 이름 검색..."
+              <input id="top10-thread-search" class="thread-search" type="text" placeholder="스레드 이름 검색..."
                      oninput="setTop10Search(this.value)">
             </div>
             <div style="display:flex;gap:6px;align-items:center">
@@ -755,6 +755,7 @@ let agentConnected  = false;
 const threadData = { apm: [], agent: [] };
 const threadFilter = { apm: 'ALL', agent: 'ALL' };
 const threadSearch = { apm: '', agent: '' };
+let agentDefaultSearchApplied = false;
 
 // Tomcat RequestProcessor cache (workerThreadName → request info)
 const requestData = { agent: [] };
@@ -919,6 +920,22 @@ async function refreshAgent(){
     // 스레드 테이블 + Live Stack
     const agThreads=await fetch('/agent/threads').then(r=>r.json());
     threadData.agent=agThreads;
+
+    // 최초 연결 시 Tomcat http-nio 워커 prefix를 자동 감지해 기본 검색어로 설정
+    if(!agentDefaultSearchApplied){
+      const nio=agThreads.find(t=>/^http-nio-\d+-exec/.test(t.name||''));
+      if(nio){
+        agentDefaultSearchApplied=true;
+        const prefix=nio.name.match(/^(http-nio-\d+-exec)/)[1];
+        threadSearch['agent']=prefix;
+        const agInput=document.getElementById('agent-thread-search');
+        if(agInput) agInput.value=prefix;
+        top10Search=prefix.toLowerCase();
+        const t10Input=document.getElementById('top10-thread-search');
+        if(t10Input) t10Input.value=prefix;
+      }
+    }
+
     renderThreads('agent','agent-thread-tbody','agent-thread-pills',agThreads,true);
     renderLivePanel('agent-live-body',agThreads,'agent');
   }catch(_){agentConnected=false;}
