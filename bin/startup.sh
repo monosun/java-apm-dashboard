@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================
-#  startup.sh  —  Java APM Dashboard v1.12.1  Background Start
+#  startup.sh  —  Java APM Dashboard v1.12.2  Background Start
 #
 #  Usage:
 #    ./startup.sh              Start with default port 9090
@@ -44,7 +44,7 @@ error() { echo -e "${RED}[ERROR]${NC} $*" >&2; }
 
 echo ""
 echo " ╔════════════════════════════════════════════╗"
-echo " ║  Java APM Dashboard v1.12.1  |  Start     ║"
+echo " ║  Java APM Dashboard v1.12.2  |  Start     ║"
 echo " ║  Dashboard : $DASHBOARD"
 echo " ╚════════════════════════════════════════════╝"
 echo ""

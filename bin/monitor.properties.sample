@@ -1,26 +1,26 @@
 # ============================================================
-#  Java APM Dashboard v1.12.1 — 설정 샘플 파일
+#  Java APM Dashboard v1.12.2 — 설정 샘플 파일
 # ============================================================
 #
 #  [사용 방법]
 #  이 파일을 복사하여 JAR 파일과 같은 디렉터리에
 #  monitor.properties 로 저장하면 자동으로 적용됩니다.
 #
-#    java-monitor-1.12.1.jar
+#    java-monitor-1.12.2.jar
 #    monitor.properties        ← 이 파일 (복사 후 이름 변경)
 #
 #  또는 bin/ 디렉터리의 monitor.properties 를 직접 수정하세요.
 #  bin/startup.bat|startup.sh 는 bin/logging.properties 를 자동 참조합니다.
 #
 #  특정 경로를 직접 지정할 수도 있습니다:
-#    java -jar java-monitor-1.12.1.jar /etc/monitor/prod.properties
+#    java -jar java-monitor-1.12.2.jar /etc/monitor/prod.properties
 #
 #  [적용 우선순위]  낮음 ─────────────────────── 높음
 #    JAR 내 기본값  →  이 파일(외부)  →  -D 시스템 속성
 #
 #  [시스템 속성 덮어쓰기 예시]
 #    java -Dserver.http.port=8080 -Dagent.enabled=true \
-#         -jar java-monitor-1.12.1.jar
+#         -jar java-monitor-1.12.2.jar
 # ============================================================
 
 
@@ -46,7 +46,7 @@ server.span.buffer.size=1000
 # ============================================================
 #
 #  대상 JVM 시작 시:
-#    java -javaagent:java-monitor-1.12.1-agent.jar=port=7979 -jar myapp.jar
+#    java -javaagent:java-monitor-1.12.2-agent.jar=port=7979 -jar myapp.jar
 #
 #  Agent 노출 엔드포인트 (대상 JVM):
 #    GET http://<agent.host>:<agent.port>/agent/threads

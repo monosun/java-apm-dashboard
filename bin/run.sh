@@ -13,7 +13,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-TARGET_JAR="$PROJECT_DIR/target/java-monitor-1.12.1.jar"
+TARGET_JAR="$PROJECT_DIR/target/java-monitor-1.12.2.jar"
 MAIN_CLASS="com.monosun.monitor.demo.MonitoringDemo"
 SRC_DIR="$PROJECT_DIR/src/main/java"
 CLASS_DIR="$PROJECT_DIR/target/classes"
@@ -41,7 +41,7 @@ error() { echo -e "${RED}[ERROR]${NC} $*" >&2; }
 
 echo ""
 echo " ╔══════════════════════════════════════╗"
-echo " ║  Java Performance Monitor v1.12.1   ║"
+echo " ║  Java Performance Monitor v1.12.2   ║"
 echo " ╚══════════════════════════════════════╝"
 echo ""
 
