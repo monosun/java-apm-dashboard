@@ -386,7 +386,7 @@ public class AgentThreadCollector {
         MBeanServer mbs = ManagementFactory.getPlatformMBeanServer();
         List<Map<String, Object>> result = new ArrayList<>();
         result.addAll(queryHikariPools(mbs));
-        result.addAll(queryLocalPools(mbs, "Catalina:type=DataSource,*",                       "tomcat-jdbc"));
+        result.addAll(queryTomcatJdbcPools(mbs));
         result.addAll(queryLocalPools(mbs, "org.apache.commons.pool2:type=GenericObjectPool,*", "dbcp2"));
         return result;
     }
@@ -451,6 +451,37 @@ public class AgentThreadCollector {
         p.put("minIdle",     toLong(safeAttr(mbs, statsOn, "MinimumIdle",
                              cfgOn != null ? safeAttr(mbs, cfgOn, "MinimumIdle", -1L) : -1L)));
         return p;
+    }
+
+    // Tomcat JDBC pool (org.apache.tomcat.jdbc.pool) JMX attribute names differ from HikariCP/DBCP2.
+    // ConnectionPoolMBean exposes: NumActive, NumIdle, Size, WaitCount, MaxActive, MinIdle.
+    private List<Map<String, Object>> queryTomcatJdbcPools(MBeanServer mbs) {
+        List<Map<String, Object>> result = new ArrayList<>();
+        Set<String> seen = new HashSet<>();
+        try {
+            Set<ObjectName> names = mbs.queryNames(new ObjectName("Catalina:type=DataSource,*"), null);
+            for (ObjectName on : names) {
+                String poolName = on.getKeyProperty("name");
+                if (poolName == null) poolName = on.getKeyProperty("pool");
+                if (poolName == null) poolName = on.toString();
+                // JMX quotes JNDI names containing '/' — strip surrounding quotes
+                if (poolName.startsWith("\"") && poolName.endsWith("\""))
+                    poolName = poolName.substring(1, poolName.length() - 1);
+                // Multiple webapp contexts may register the same physical pool — deduplicate
+                if (!seen.add(poolName)) continue;
+                Map<String, Object> p = new LinkedHashMap<>();
+                p.put("poolType", "tomcat-jdbc");
+                p.put("poolName", poolName);
+                p.put("totalConnections",  toLong(safeAttr(mbs, on, "Size",      safeAttr(mbs, on, "size",      -1L))));
+                p.put("activeConnections", toLong(safeAttr(mbs, on, "NumActive",  safeAttr(mbs, on, "numActive", -1L))));
+                p.put("idleConnections",   toLong(safeAttr(mbs, on, "NumIdle",    safeAttr(mbs, on, "numIdle",   -1L))));
+                p.put("pendingThreads",    toLong(safeAttr(mbs, on, "WaitCount",  safeAttr(mbs, on, "waitCount", -1L))));
+                p.put("maxPoolSize",       toLong(safeAttr(mbs, on, "MaxActive",  safeAttr(mbs, on, "maxActive", -1L))));
+                p.put("minIdle",           toLong(safeAttr(mbs, on, "MinIdle",    safeAttr(mbs, on, "minIdle",   -1L))));
+                result.add(p);
+            }
+        } catch (Exception ignored) {}
+        return result;
     }
 
     private List<Map<String, Object>> queryLocalPools(MBeanServer mbs, String patternStr, String poolType) {
